@@ -22,6 +22,18 @@ Garder les originaux en lecture seule. Pour comparer les modèles, décoder à u
 
 Fixer avant calcul une normalisation de référence : casse, ponctuation, espaces, nombres, contractions et variantes d’écriture wolof. Conserver aussi le texte brut. Les évaluateurs wolof doivent valider les formes de référence ; ne pas assimiler automatiquement une variante orthographique à une erreur sémantique.
 
+### Conventions retenues (implémentées dans `app/evaluation/metrics.py`)
+
+- Normalisation avant comparaison : Unicode NFC, minuscules, ponctuation supprimée, apostrophes unifiées (`’` → `'`), espaces réduits. **Les accents sont conservés** (pour ne pas masquer des erreurs françaises ni fusionner des orthographes wolof distinctes).
+- **Nombres en chiffres dans les références** (« 8 heures », « 20 minutes »), car les moteurs testés écrivent en chiffres. Une différence de format (« 8h » contre « 8 heures ») reste comptée comme une erreur visible, pas corrigée en silence.
+- Aucune équivalence orthographique wolof automatique : les variantes sont des erreurs jusqu'à décision d'un évaluateur wolophone.
+- WER et CER agrégés par catégorie en **micro-moyenne** (total des erreurs / total des mots de référence), pas en moyenne de taux par clip. Le WER d'une référence vide est indéfini.
+- Un clip qui échoue (conversion, moteur) est compté dans la colonne « échecs » et exclu des taux, jamais ignoré.
+
+## Mise en œuvre
+
+Le manifeste est un CSV (`id, audio_path, category, reference, split, synthetic, rights, speaker, context`), validé en entier avant tout calcul (catégorie, séparation `dev`/`validation`, droits renseignés, audio présent, silence sans référence). Les catégories sont `fr`, `en`, `wo`, `mixed`, `silence`. Les corpus et les résultats vivent dans `data/` (ignoré par Git) ; ne jamais y déposer d'audio sans l'autorisation des locuteurs. Commandes et premiers résultats : [evaluation-results.md](evaluation-results.md).
+
 ## Mesures à enregistrer
 
 Pour chaque modèle, fichier et langue :

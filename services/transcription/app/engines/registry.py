@@ -20,6 +20,11 @@ def _build(engine_name: str) -> SpeechEngine:
     )
 
 
+def create_engine(engine_name: str) -> SpeechEngine:
+    """Build a fresh, unshared engine (evaluation runs); the service uses get_engine()."""
+    return _build(engine_name)
+
+
 def capabilities_for(engine_name: str) -> EngineCapabilities | None:
     """Declared capabilities without loading a model (they are class attributes). None if unknown."""
     if engine_name == "faster-whisper":

@@ -9,10 +9,12 @@ Ordre imposé par [AGENTS.md](../AGENTS.md). Légende : fait = implémenté et t
 | Structure du dépôt, journalisation | fait |
 | Transcription de fichiers (FFmpeg + faster-whisper), segments et langue estimée | fait (tests avec moteur factice ; le vrai modèle n'est pas exécuté dans les tests) |
 | API testée (validation, erreurs, jeton, concurrence) | fait (Pytest) |
-| Évaluation FR / EN / Wolof / mixte, WER, CER, latence, mémoire | **à faire** : aucun corpus ni script. C'est la condition pour affirmer un support du wolof. |
-| Comparaison de modèles (`small`, `medium`, `large-v3`, autres moteurs) | à faire |
+| Outillage d'évaluation (manifeste validé, WER/CER micro-moyennés, latence, facteur temps réel, pic mémoire, hallucinations sur silence, rapport) | fait : `python -m app.evaluation`, testé (Pytest) |
+| Mesure FR / EN sur corpus **synthétique** (`tiny`, `base`, `small`) | fait : voir [evaluation-results.md](evaluation-results.md). Valide l'outillage et la vitesse, **pas** la qualité sur de vraies voix |
+| Évaluation sur de **vraie parole** FR / EN, **wolof**, **mixte** | **à faire, bloquée par les données** : aucun clip autorisé avec transcription de référence. C'est la condition pour affirmer un support du wolof |
+| Comparaison de modèles (`medium`, `large-v3`, autres moteurs) | à faire (poids non téléchargés sans accord) |
 
-Prochaine action : constituer le corpus selon [evaluation-protocol.md](evaluation-protocol.md), écrire `scripts/evaluate.py`, décider du moteur avant la phase 2.
+Prochaine action côté données : réunir 5 à 10 extraits autorisés par catégorie avec transcription de référence validée (un évaluateur wolophone pour le wolof), les placer dans `data/corpus/` avec un `manifest.csv`, puis relancer l'évaluation.
 
 ## Phase 2 - Transcription en direct (à faire)
 

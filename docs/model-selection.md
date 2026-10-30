@@ -4,6 +4,10 @@
 
 Garder un contrat `SpeechEngine` indépendant du fournisseur. Utiliser faster-whisper `base` en CPU INT8 comme moteur de prototype Windows pour français/anglais ; le choix est provisoire et doit être mesuré sur le corpus du projet. Les poids ne sont pas inclus dans le dépôt. Leur téléchargement se déclenche uniquement après que l’utilisateur demande une transcription, jamais au démarrage.
 
+## Mesures disponibles (voir [evaluation-results.md](evaluation-results.md))
+
+Sur corpus synthétique FR/EN uniquement et sur le CPU de référence : `tiny` ≈ 0,2× le temps réel (278 Mio), `base` ≈ 0,4× (354 Mio), `small` ≈ 1,2–1,4× (724 Mio, plus lent que le temps réel). `base` reste le choix provisoire : marge d'environ 2× pour un traitement par blocs. `small` est écarté du direct sur cette machine tant qu'aucune optimisation n'est démontrée. Aucune mesure sur vraie parole, sur le wolof ou sur l'alternance de langues : le choix du moteur pour ces cas reste ouvert.
+
 ## Blocage Windows constaté
 
 L’installation de l’extra `omnilingual-asr` a été tentée dans l’environnement Python 3.11 Windows du projet. La résolution s’arrête car `fairseq2n` ne dispose pas d’une distribution compatible pour cette plateforme depuis l’index utilisé. Les poids n’ont pas été téléchargés. Omnilingual reste un candidat de conception, mais ne peut pas servir de moteur testable dans cette installation sans résoudre le support Windows ou choisir un autre moteur.

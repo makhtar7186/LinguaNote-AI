@@ -46,6 +46,8 @@ Toutes les variables d'environnement sont listées dans [.env.example](.env.exam
 | Build du renderer | `npm run build` | racine |
 | Tests backend (Pytest) | `python -m pytest` | `services/transcription` |
 | Lint backend (Ruff) | `python -m ruff check app tests` | `services/transcription` |
+| Évaluation d'un corpus (WER/CER, vitesse, mémoire) | `python -m app.evaluation run --manifest <manifest.csv> --models base` | `services/transcription` |
+| Corpus de synthèse de contrôle | `powershell -File scripts\make-synthetic-corpus.ps1` | racine |
 
 Les tests Pytest qui convertissent de l'audio exigent FFmpeg ; ils sont ignorés s'il est absent. Aucun test ne télécharge de modèle.
 
