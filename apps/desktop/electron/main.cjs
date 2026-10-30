@@ -1,8 +1,9 @@
-const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
+const { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const api = require("./api-client.cjs");
 const launcher = require("./backend-launcher.cjs");
+const historyClient = require("./history-client.cjs");
 const { createUrlPolicy } = require("./app-urls.cjs");
 const { createBubbleController } = require("./bubble-controller.cjs");
 const { createArmGate } = require("./capture-gate.cjs");
@@ -79,7 +80,9 @@ async function startBackend() {
     if (launcher.planBackend().mode === "external") {
       config = api.getConfig();
     } else {
-      const backend = await launcher.startManagedBackend(process.env, {
+      // History lives in the user's profile, not in the install folder; an explicit LINGUANOTE_DATA_DIR wins.
+      const env = { ...process.env, LINGUANOTE_DATA_DIR: process.env.LINGUANOTE_DATA_DIR || path.join(app.getPath("userData"), "data") };
+      const backend = await launcher.startManagedBackend(env, {
         // Registered as soon as the process exists, so quitting during startup still stops it.
         onSpawn: (stop) => { stopBackend = stop; },
         isCancelled: () => quitting,
@@ -232,6 +235,36 @@ function registerIpc() {
     return backendNotReady() ?? api.transcribe(config, payload);
   });
 
+  // History: one channel per operation of an allow-list; arguments are validated in history-client.cjs.
+  ipcMain.handle("linguanote:history:run", async (event, operation, args) => {
+    assertTrustedSender(event);
+    if (typeof operation !== "string") return { ok: false, code: "invalid_argument", message: "Opération inconnue." };
+    return backendNotReady() ?? historyClient.run(config, operation, args);
+  });
+
+  // The file is written here, in the main process, to a place the user picks in a native dialog:
+  // the renderer never supplies a path.
+  ipcMain.handle("linguanote:history:export", async (event, args) => {
+    assertTrustedSender(event);
+    const notReady = backendNotReady();
+    if (notReady) return notReady;
+    const exported = await historyClient.exportSession(config, args);
+    if (!exported.ok) return exported;
+    const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+    const choice = await dialog.showSaveDialog(owner, {
+      title: "Exporter la transcription",
+      defaultPath: path.join(app.getPath("documents"), exported.suggestedName),
+      filters: [{ name: args.format.toUpperCase(), extensions: [args.format] }],
+    });
+    if (choice.canceled || !choice.filePath) return { ok: true, saved: false };
+    try {
+      await fs.promises.writeFile(choice.filePath, exported.content, "utf8");
+    } catch {
+      return { ok: false, code: "write_failed", message: "Le fichier n'a pas pu être écrit à cet emplacement." };
+    }
+    return { ok: true, saved: true };
+  });
+
   // Step 1 of a session: the window declares the source it is about to open. The recording indicator (the bubble) is
   // made visible NOW, before any microphone or loopback is opened, and system audio can only be armed after this.
   ipcMain.handle("linguanote:live:prepare", async (event, options) => {
@@ -260,6 +293,7 @@ function registerIpc() {
     liveClient = new LiveClient(config, {
       onEvent: onLiveEvent,
       onState: (state) => onLiveEvent({ type: "client_state", state }),
+      source: requested,
     });
     // Claim and watch the owning window BEFORE starting, so a start that fails at once leaves nothing behind.
     disposeOwnerWatch();
@@ -391,7 +425,7 @@ async function runSmokeTest() {
     check("main page rendered with the strict CSP", mainProbe.hasRoot && /default-src 'self'/.test(mainProbe.csp ?? "") && !/unsafe-inline/.test(mainProbe.csp ?? ""), JSON.stringify(mainProbe.csp));
     check("bubble page rendered with the strict CSP", bubbleProbe.hasRoot && bubbleProbe.marker && /default-src 'self'/.test(bubbleProbe.csp ?? "") && !/unsafe-inline/.test(bubbleProbe.csp ?? ""));
     check("renderers have no Node.js (require/process undefined)", [mainProbe, bubbleProbe].every((p) => p.require === "undefined" && p.process === "undefined"));
-    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
+    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "history", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
     check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "prepare", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
     const frameProbe = `new Promise((resolve) => {
@@ -505,6 +539,39 @@ async function runSmokeTest() {
       check("stop ends the session and is mirrored to every window", liveRun.ended && liveRun.finalStatus.state === "ended" && liveRun.sequence.includes("pause_state"), JSON.stringify(liveRun.sequence));
       const bubbleSaw = await run(bubble.webContents, "window.linguaNote.live.status()");
       check("the other window reads the same state", bubbleSaw.state === "ended");
+
+      // History through the real bridge, IPC and service. The run's data folder is a throw-away one (see scripts/smoke.cjs).
+      const history = await run(mainWindow.webContents, `(async () => {
+        const h = window.linguaNote.history;
+        const before = await h.getSettings();
+        const offLive = await h.list({});
+        const badRetention = await h.setSettings(true, 13);
+        const badId = await h.get('../health');
+        const noConfirm = await h.removeAll(false);
+        const enabled = await h.setSettings(true, 30);
+        const events = [];
+        const off = window.linguaNote.live.onEvent((event) => events.push(event));
+        await window.linguaNote.live.start({ source: 'microphone' });
+        const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 100)); return test(); };
+        await wait(() => events.some((e) => e.type === 'client_state' && e.state === 'active'), 90000);
+        await window.linguaNote.live.stop();
+        await wait(() => events.some((e) => e.type === 'session_ended'), 30000);
+        off();
+        const listed = await h.list({});
+        const first = listed.data?.items?.[0];
+        const detail = first ? await h.get(first.id) : null;
+        const renamed = first ? await h.rename(first.id, 'Essai fumée') : null;
+        const deleted = first ? await h.remove(first.id) : null;
+        const afterDelete = await h.list({});
+        const all = await h.removeAll(true);
+        await h.setSettings(false, 30);
+        return { before, offLive, badRetention, badId, noConfirm, enabled, listed, detail, renamed, deleted, afterDelete, all };
+      })()`);
+      check("history is off by default", history.before.ok && history.before.data.enabled === false && history.offLive.data.total === 0, JSON.stringify(history.before));
+      check("history refuses an invalid retention, a path-like id and an unconfirmed wipe", history.badRetention.ok === false && history.badId.ok === false && history.noConfirm.ok === false, JSON.stringify({ a: history.badRetention, b: history.badId, c: history.noConfirm }));
+      check("history can be turned on through the bridge", history.enabled.ok && history.enabled.data.enabled === true);
+      check("a live session is recorded once the history is on, with the source the window declared", history.listed.ok && history.listed.data.total === 1 && history.detail.data.source === "microphone" && history.detail.data.status === "complete", JSON.stringify(history.listed.data?.items?.[0]));
+      check("a session can be renamed and deleted, and deleting everything works", history.renamed.ok && history.deleted.ok && history.afterDelete.data.total === 0 && history.all.ok);
     }
   }
 

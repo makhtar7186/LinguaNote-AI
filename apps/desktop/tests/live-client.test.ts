@@ -69,6 +69,21 @@ describe("opening", () => {
     expect(socket().url).not.toContain("tok");
   });
 
+  it("declares the capture source in the start message, and only in it (a resume carries none)", () => {
+    const client = new live.LiveClient(config, { WebSocketImpl: FakeWebSocket, onEvent: () => {}, source: "system" });
+    client.start();
+    const first = FakeWebSocket.instances.at(-1)!;
+    first.open();
+    expect(first.json()[0]).toEqual({ type: "start", token: "tok", protocol: 1, source: "system" });
+    first.receive(started());
+    first.drop();
+    vi.advanceTimersByTime(60_000);
+    const second = FakeWebSocket.instances.at(-1)!;
+    second.open();
+    expect(second.json()[0]).toMatchObject({ type: "resume", session_id: "S1" });
+    expect(second.json()[0]).not.toHaveProperty("source");
+  });
+
   it("becomes active on session_started and forwards it", () => {
     const { client, events, states, socket } = setup();
     client.start();

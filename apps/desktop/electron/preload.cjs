@@ -31,6 +31,21 @@ contextBridge.exposeInMainWorld("linguaNote", {
     onEvent: (listener) => subscribe("linguanote:live:event", listener),
   },
 
+  // The saved transcriptions (opt-in). Fixed operation names; the main process validates every argument.
+  history: {
+    getSettings: () => ipcRenderer.invoke("linguanote:history:run", "getSettings"),
+    setSettings: (enabled, retentionDays) =>
+      ipcRenderer.invoke("linguanote:history:run", "setSettings", { enabled, retentionDays }),
+    list: (options) => ipcRenderer.invoke("linguanote:history:run", "list", {
+      query: options?.query, limit: options?.limit, offset: options?.offset,
+    }),
+    get: (id) => ipcRenderer.invoke("linguanote:history:run", "get", { id }),
+    rename: (id, title) => ipcRenderer.invoke("linguanote:history:run", "rename", { id, title }),
+    remove: (id) => ipcRenderer.invoke("linguanote:history:run", "remove", { id }),
+    removeAll: (confirm) => ipcRenderer.invoke("linguanote:history:run", "removeAll", { confirm: confirm === true }),
+    export: (id, format) => ipcRenderer.invoke("linguanote:history:export", { id, format }),
+  },
+
   // System audio capture is denied unless this is called first (see capture-gate.cjs).
   capture: {
     armSystemAudio: () => ipcRenderer.invoke("linguanote:capture:armSystemAudio"),

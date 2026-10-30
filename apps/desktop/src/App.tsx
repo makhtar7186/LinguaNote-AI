@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { LevelMeter, SilenceWarning, SourcePicker } from "./components/SourcePicker";
 import { useCapturePreferences, useMicrophones } from "./hooks/useCapturePreferences";
 import { useLiveTranscription } from "./hooks/useLiveTranscription";
@@ -347,6 +348,8 @@ export default function App() {
           </button>
         )}
       </section>
+
+      {window.linguaNote?.history && <HistoryPanel />}
 
       <footer>LinguaNote AI <span>·</span> Prototype local · Traitement sur cet appareil</footer>
     </main>

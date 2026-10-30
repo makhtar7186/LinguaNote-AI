@@ -18,12 +18,15 @@ if (!fs.existsSync(path.join(appDir, "dist", "index.html")) || !fs.existsSync(pa
 }
 
 const outputFile = path.join(os.tmpdir(), `linguanote-smoke-${process.pid}.json`);
+// The run writes history for real: it gets its own throw-away folder and never touches the user's saved sessions.
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "linguanote-smoke-data-"));
 
 const child = startElectron({
   stdio: ["ignore", "ignore", "pipe"],
   extraEnv: {
     LINGUANOTE_SMOKE_TEST: "1",
     LINGUANOTE_SMOKE_OUTPUT: outputFile,
+    LINGUANOTE_DATA_DIR: dataDir,
     HF_HUB_OFFLINE: process.env.LINGUANOTE_SMOKE_ALLOW_DOWNLOAD === "1" ? "" : "1",
   },
 });
@@ -44,6 +47,7 @@ child.on("exit", (code) => {
     // No report: the application did not get as far as writing one.
   } finally {
     fs.rmSync(outputFile, { force: true });
+    fs.rmSync(dataDir, { recursive: true, force: true });
   }
 
   if (!report) {

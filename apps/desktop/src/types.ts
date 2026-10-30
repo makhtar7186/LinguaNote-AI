@@ -130,10 +130,60 @@ export interface ShortcutReport {
   failed: { name: string; accelerator: string; reason: string }[];
 }
 
+export type HistoryExportFormat = "txt" | "md" | "srt" | "vtt" | "json";
+
+export interface HistorySettings {
+  enabled: boolean;
+  /** null = keep until deleted by hand. */
+  retentionDays: number | null;
+}
+
+export interface HistorySessionSummary {
+  id: string;
+  kind: "live" | "file";
+  source: AudioSourceKind | null;
+  status: "recording" | "complete" | "interrupted";
+  title: string | null;
+  createdAt: string;
+  durationSeconds: number | null;
+  engine: string | null;
+  model: string | null;
+  segmentCount: number;
+  preview: string | null;
+  /** Search hit; matches are wrapped in the \x02 / \x03 markers (see splitHighlights). */
+  snippet: string | null;
+}
+
+export interface HistorySegment {
+  text: string;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  language: string | null;
+  languageProbability: number | null;
+}
+
+export interface HistorySessionDetail extends HistorySessionSummary {
+  segments: HistorySegment[];
+}
+
+export interface HistoryBridge {
+  getSettings: () => Promise<unknown>;
+  setSettings: (enabled: boolean, retentionDays: number | null) => Promise<unknown>;
+  list: (options?: { query?: string; limit?: number; offset?: number }) => Promise<unknown>;
+  get: (id: string) => Promise<unknown>;
+  rename: (id: string, title: string) => Promise<unknown>;
+  remove: (id: string) => Promise<unknown>;
+  /** Only deletes when called with `true`. */
+  removeAll: (confirm: boolean) => Promise<unknown>;
+  /** The main process asks where to save; resolves `{ok, saved}`. */
+  export: (id: string, format: HistoryExportFormat) => Promise<unknown>;
+}
+
 export interface LinguaNoteBridge {
   health: () => Promise<unknown>;
   transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
   live?: LiveBridge;
+  history?: HistoryBridge;
   bubble?: BubbleBridge;
   capture?: CaptureBridge;
   shortcuts?: ShortcutsBridge;
