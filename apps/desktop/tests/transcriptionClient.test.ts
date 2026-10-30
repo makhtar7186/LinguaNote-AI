@@ -32,6 +32,26 @@ describe("parseTranscription", () => {
     expect(parsed.segments).toEqual([{ start_seconds: 0, end_seconds: 1, text: "ok" }]);
   });
 
+  it("drops segments with non-finite, negative or reversed timestamps", () => {
+    const parsed = parseTranscription({
+      text: "t", engine: "e", model: "m",
+      segments: [
+        { start_seconds: Number.NaN, end_seconds: 1, text: "nan" },
+        { start_seconds: -1, end_seconds: 1, text: "negative" },
+        { start_seconds: 3, end_seconds: 2, text: "reversed" },
+        { start_seconds: 0, end_seconds: Number.POSITIVE_INFINITY, text: "infinite" },
+        { start_seconds: 1, end_seconds: 2, text: "good" },
+      ],
+    });
+    expect(parsed.segments).toEqual([{ start_seconds: 1, end_seconds: 2, text: "good" }]);
+  });
+
+  it("treats an out-of-range language probability as absent", () => {
+    const base = { text: "t", engine: "e", model: "m" };
+    expect(parseTranscription({ ...base, language_probability: 1.7 }).language_probability).toBeNull();
+    expect(parseTranscription({ ...base, language_probability: 0.42 }).language_probability).toBe(0.42);
+  });
+
   it("rejects payloads without text", () => {
     expect(() => parseTranscription({ engine: "e", model: "m" })).toThrow(TranscriptionError);
     expect(() => parseTranscription(null)).toThrow(TranscriptionError);
@@ -41,6 +61,16 @@ describe("parseTranscription", () => {
 describe("parseHealth", () => {
   it("ignores malformed limits", () => {
     expect(parseHealth({ ok: true, limits: { max_upload_bytes: "x" } }).limits).toBeUndefined();
+  });
+
+  it("rejects zero, negative or infinite limits", () => {
+    const limits = (max_upload_bytes: number, max_audio_seconds: number) => ({
+      ok: true, limits: { max_upload_bytes, max_audio_seconds, extensions: [".wav"] },
+    });
+    expect(parseHealth(limits(0, 10)).limits).toBeUndefined();
+    expect(parseHealth(limits(10, -5)).limits).toBeUndefined();
+    expect(parseHealth(limits(10, Number.POSITIVE_INFINITY)).limits).toBeUndefined();
+    expect(parseHealth(limits(10, 30)).limits?.max_audio_seconds).toBe(30);
   });
 
   it("flags an invalid envelope as unavailable", () => {

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, session } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const api = require("./api-client.cjs");
+const launcher = require("./backend-launcher.cjs");
 
 const DEV_URL = "http://127.0.0.1:5173";
 const PACKAGED_INDEX = pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).href;
@@ -14,6 +15,28 @@ const CSP_DEV = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-sr
 
 let mainWindow;
 let config;
+let backend = null;
+// "starting" until the Python service answers; "failed" keeps the reason for the status pill.
+let backendState = { status: "starting", message: "Démarrage du service local…" };
+
+async function startBackend() {
+  try {
+    if (launcher.planBackend().mode === "external") {
+      config = api.getConfig();
+    } else {
+      backend = await launcher.startManagedBackend();
+      config = { base: backend.base, token: backend.token };
+    }
+    backendState = { status: "ready" };
+  } catch (error) {
+    backendState = { status: "failed", message: error instanceof Error ? error.message : "Le service local n'a pas démarré." };
+  }
+}
+
+function backendNotReady() {
+  if (backendState.status === "ready") return null;
+  return { ok: false, code: backendState.status === "starting" ? "starting" : "backend_start_failed", message: backendState.message };
+}
 
 function isAppUrl(url) {
   return app.isPackaged ? url === PACKAGED_INDEX : url.startsWith(`${DEV_URL}/`) || url === DEV_URL;
@@ -58,7 +81,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  config = api.getConfig();
+  void startBackend();
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -81,12 +104,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle("linguanote:health", async (event) => {
     assertTrustedSender(event);
-    return api.health(config);
+    return backendNotReady() ?? api.health(config);
   });
 
   ipcMain.handle("linguanote:transcribe", async (event, payload) => {
     assertTrustedSender(event);
-    return api.transcribe(config, payload);
+    return backendNotReady() ?? api.transcribe(config, payload);
   });
 
   createWindow();
@@ -94,3 +117,4 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("will-quit", () => { backend?.stop(); });

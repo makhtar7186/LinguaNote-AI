@@ -4,6 +4,7 @@ import { getServiceHealth, transcribeFile } from "./services/transcriptionClient
 import type { ServiceHealth, TranscriptionResponse } from "./types";
 
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
+const DEFAULT_ACCEPT = "audio/*,video/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.mp4,.mov,.mkv,.webm,.wma,.aac";
 
 function formatTime(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
@@ -29,6 +30,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const maxBytes = health?.limits?.max_upload_bytes ?? DEFAULT_MAX_BYTES;
+  // The service is the source of truth for supported formats; the fallback only covers "service not reached yet".
+  const acceptedExtensions = health?.limits?.extensions.length
+    ? health.limits.extensions.join(",")
+    : DEFAULT_ACCEPT;
 
   const refreshHealth = useCallback(() => {
     void getServiceHealth().then(setHealth).catch(() => {
@@ -163,7 +168,7 @@ export default function App() {
           ref={fileInputRef}
           className="visually-hidden"
           type="file"
-          accept="audio/*,video/*,.mp3,.m4a,.flac,.ogg,.opus,.wav,.mp4,.mov,.mkv,.webm,.wma,.aac"
+          accept={acceptedExtensions}
           onChange={(event) => chooseFile(event.target.files?.[0])}
         />
 

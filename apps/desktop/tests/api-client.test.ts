@@ -36,16 +36,26 @@ describe("validateTranscribePayload", () => {
   });
 });
 
+const HEALTH_LIMITS = { limits: { max_upload_bytes: 1024, max_audio_seconds: 30, extensions: [".wav", ".ogg"] } };
+
+/** Routes by URL and builds a fresh Response per call (a Response body can only be read once). */
+function backend({ health = HEALTH_LIMITS, post }: { health?: unknown; post: () => Response | Promise<Response> }) {
+  return vi.fn(async (url: string, _init?: { headers?: Record<string, string> }) => (
+    String(url).endsWith("/health") ? jsonResponse(health) : post()
+  ));
+}
+const posts = (fetchImpl: ReturnType<typeof backend>) => fetchImpl.mock.calls.filter(([url]) => !String(url).endsWith("/health"));
+
 describe("transcribe", () => {
   it("sends the token header and returns data", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ text: "ok" }));
+    const fetchImpl = backend({ post: () => jsonResponse({ text: "ok" }) });
     const result = await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes }, fetchImpl);
     expect(result).toEqual({ ok: true, data: { text: "ok" } });
-    expect(fetchImpl.mock.calls[0][1].headers).toEqual({ "X-LinguaNote-Token": "tok" });
+    expect(posts(fetchImpl)[0][1]?.headers).toEqual({ "X-LinguaNote-Token": "tok" });
   });
 
   it("maps backend errors to the envelope", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ detail: "trop long", code: "audio_too_long" }, 413));
+    const fetchImpl = backend({ post: () => jsonResponse({ detail: "trop long", code: "audio_too_long" }, 413) });
     const result = await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes }, fetchImpl);
     expect(result).toEqual({ ok: false, code: "audio_too_long", message: "trop long" });
   });
@@ -58,16 +68,32 @@ describe("transcribe", () => {
 
   it("reports a timeout", async () => {
     const timeout = Object.assign(new Error("t"), { name: "TimeoutError" });
-    const fetchImpl = vi.fn().mockRejectedValue(timeout);
+    const fetchImpl = backend({ post: () => Promise.reject(timeout) });
     const result = await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes }, fetchImpl);
     expect(result).toMatchObject({ ok: false, code: "timeout" });
   });
 
-  it("never calls the backend for an invalid payload", async () => {
-    const fetchImpl = vi.fn();
+  it("never uploads an invalid payload", async () => {
+    const fetchImpl = backend({ post: () => jsonResponse({}) });
     const result = await api.transcribe(config, { name: "a.exe", type: "x", bytes }, fetchImpl);
     expect(result).toMatchObject({ ok: false, code: "unsupported_extension" });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(posts(fetchImpl)).toHaveLength(0);
+  });
+
+  it("enforces the limits advertised by the service rather than hardcoded ones", async () => {
+    const fetchImpl = backend({ post: () => jsonResponse({ text: "ok" }) });
+    const big = new Uint8Array(2048);
+    expect(await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes: big }, fetchImpl))
+      .toMatchObject({ ok: false, code: "file_too_large" });
+    expect(await api.transcribe(config, { name: "a.mp3", type: "audio/mpeg", bytes }, fetchImpl))
+      .toMatchObject({ ok: false, code: "unsupported_extension" });
+    expect(posts(fetchImpl)).toHaveLength(0);
+  });
+
+  it("falls back to default limits when /health is malformed", async () => {
+    const fetchImpl = backend({ health: { limits: { max_upload_bytes: -1, extensions: "wav" } }, post: () => jsonResponse({ text: "ok" }) });
+    expect(await api.transcribe(config, { name: "a.mp3", type: "audio/mpeg", bytes }, fetchImpl))
+      .toEqual({ ok: true, data: { text: "ok" } });
   });
 });
 

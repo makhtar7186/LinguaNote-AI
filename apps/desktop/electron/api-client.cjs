@@ -27,19 +27,36 @@ function getConfig(env = process.env) {
   return { base, token: env.LINGUANOTE_API_TOKEN || "" };
 }
 
-function validateTranscribePayload(payload) {
+// The backend is the source of truth for limits; these defaults only apply if /health is unreachable.
+const DEFAULT_LIMITS = { maxUploadBytes: MAX_UPLOAD_BYTES, extensions: ALLOWED_EXTENSIONS };
+
+function validateTranscribePayload(payload, limits = DEFAULT_LIMITS) {
   if (!payload || typeof payload.name !== "string" || typeof payload.type !== "string") {
     throw new IpcError("invalid_payload", "Fichier invalide.");
   }
   const extension = path.extname(payload.name).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.has(extension)) {
+  if (!limits.extensions.has(extension)) {
     throw new IpcError("unsupported_extension", "Format de fichier non pris en charge.");
   }
   if (!(payload.bytes instanceof Uint8Array) || payload.bytes.byteLength === 0) {
     throw new IpcError("empty_file", "Le fichier audio est vide ou illisible.");
   }
-  if (payload.bytes.byteLength > MAX_UPLOAD_BYTES) {
-    throw new IpcError("file_too_large", "La limite de taille est de 50 Mio.");
+  if (payload.bytes.byteLength > limits.maxUploadBytes) {
+    throw new IpcError("file_too_large", `La limite de taille est de ${Math.round(limits.maxUploadBytes / (1024 * 1024))} Mio.`);
+  }
+}
+
+/** Limits advertised by the running service, or the defaults when it cannot be asked. */
+async function fetchLimits(config, fetchImpl) {
+  try {
+    const response = await request(config, "/health", {}, HEALTH_TIMEOUT_MS, fetchImpl);
+    const limits = (await response.json())?.limits;
+    const valid = Number.isFinite(limits?.max_upload_bytes) && limits.max_upload_bytes > 0
+      && Array.isArray(limits?.extensions) && limits.extensions.every((ext) => typeof ext === "string");
+    if (!response.ok || !valid) return DEFAULT_LIMITS;
+    return { maxUploadBytes: limits.max_upload_bytes, extensions: new Set(limits.extensions) };
+  } catch {
+    return DEFAULT_LIMITS;
   }
 }
 
@@ -73,7 +90,7 @@ async function health(config, fetchImpl) {
 
 async function transcribe(config, payload, fetchImpl) {
   try {
-    validateTranscribePayload(payload);
+    validateTranscribePayload(payload, await fetchLimits(config, fetchImpl));
     const body = new FormData();
     body.append("file", new Blob([payload.bytes], { type: payload.type }), payload.name);
     const response = await request(
@@ -94,4 +111,6 @@ async function transcribe(config, payload, fetchImpl) {
   }
 }
 
-module.exports = { IpcError, getConfig, validateTranscribePayload, health, transcribe, MAX_UPLOAD_BYTES };
+module.exports = {
+  IpcError, getConfig, validateTranscribePayload, fetchLimits, health, transcribe, MAX_UPLOAD_BYTES,
+};

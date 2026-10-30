@@ -2,6 +2,9 @@ import type { Limits, Segment, ServiceHealth, TranscriptionResponse } from "../t
 
 const DEV_API = import.meta.env.VITE_TRANSCRIPTION_API || "http://127.0.0.1:8765";
 const DEV_TIMEOUT_MS = 15 * 60_000;
+// Browser preview only (`npm run dev:web`). The packaged app talks to the backend through Electron IPC,
+// where the secret never reaches the renderer.
+const DEV_TOKEN = import.meta.env.VITE_TRANSCRIPTION_TOKEN || "";
 
 export class TranscriptionError extends Error {
   constructor(public readonly code: string, message: string) {
@@ -12,16 +15,27 @@ export class TranscriptionError extends Error {
 type Rec = Record<string, unknown>;
 const isRec = (value: unknown): value is Rec => typeof value === "object" && value !== null;
 const optString = (value: unknown) => (typeof value === "string" ? value : null);
-const optNumber = (value: unknown) => (typeof value === "number" ? value : null);
+const optNumber = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+const isPositiveFinite = (value: unknown): value is number => (
+  typeof value === "number" && Number.isFinite(value) && value > 0
+);
 
+/** Segments must be ordered, finite and non-negative; anything else is dropped, never invented. */
 function parseSegments(value: unknown): Segment[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => (
-    isRec(item) && typeof item.text === "string"
-      && typeof item.start_seconds === "number" && typeof item.end_seconds === "number"
-      ? [{ start_seconds: item.start_seconds, end_seconds: item.end_seconds, text: item.text }]
-      : []
-  ));
+  return value.flatMap((item) => {
+    if (!isRec(item) || typeof item.text !== "string") return [];
+    const start = optNumber(item.start_seconds);
+    const end = optNumber(item.end_seconds);
+    if (start === null || end === null || start < 0 || end < start) return [];
+    return [{ start_seconds: start, end_seconds: end, text: item.text }];
+  });
+}
+
+/** A probability outside [0, 1] is a malformed value, not a confidence score. */
+function parseProbability(value: unknown): number | null {
+  const probability = optNumber(value);
+  return probability !== null && probability >= 0 && probability <= 1 ? probability : null;
 }
 
 /** The backend is a separate process: never trust its payload shape. */
@@ -37,14 +51,14 @@ export function parseTranscription(value: unknown): TranscriptionResponse {
     duration_seconds: optNumber(value.duration_seconds) ?? 0,
     timing_available: value.timing_available === true,
     language: optString(value.language),
-    language_probability: optNumber(value.language_probability),
+    language_probability: parseProbability(value.language_probability),
     segments: parseSegments(value.segments),
   };
 }
 
 function parseLimits(value: unknown): Limits | undefined {
-  if (!isRec(value) || typeof value.max_upload_bytes !== "number"
-    || typeof value.max_audio_seconds !== "number" || !Array.isArray(value.extensions)) return undefined;
+  if (!isRec(value) || !isPositiveFinite(value.max_upload_bytes)
+    || !isPositiveFinite(value.max_audio_seconds) || !Array.isArray(value.extensions)) return undefined;
   return {
     max_upload_bytes: value.max_upload_bytes,
     max_audio_seconds: value.max_audio_seconds,
@@ -83,7 +97,11 @@ export function unwrapIpc(value: unknown): unknown {
 
 async function devFetch(route: string, init: RequestInit = {}): Promise<Response> {
   try {
-    return await fetch(`${DEV_API}${route}`, { ...init, signal: AbortSignal.timeout(DEV_TIMEOUT_MS) });
+    return await fetch(`${DEV_API}${route}`, {
+      ...init,
+      headers: DEV_TOKEN ? { "X-LinguaNote-Token": DEV_TOKEN } : {},
+      signal: AbortSignal.timeout(DEV_TIMEOUT_MS),
+    });
   } catch {
     throw new TranscriptionError("service_unavailable", "Service local indisponible. Démarrez le service Python.");
   }
