@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import load_settings
+from app.config import ConfigurationError, load_settings
 from app.engines import registry
 from app.engines.base import EngineCapabilities, ModelUnavailableError, Segment, TranscriptionResult
 from app.main import create_app
+
+TOKEN = "test-token-0123456789"
+AUTH = {"X-LinguaNote-Token": TOKEN}
 
 needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg not installed")
 
@@ -48,7 +51,7 @@ def fresh_registry():
 
 @pytest.fixture
 def settings():
-    return replace(load_settings(), max_audio_seconds=5.0, max_upload_bytes=1024 * 1024, api_token=None)
+    return replace(load_settings(), max_audio_seconds=5.0, max_upload_bytes=1024 * 1024, api_token=TOKEN)
 
 
 @pytest.fixture
@@ -58,7 +61,7 @@ def use_fake_engine(monkeypatch):
 
 def client_for(settings) -> TestClient:
     # TrustedHostMiddleware only accepts loopback names, so the default "testserver" host is rejected.
-    return TestClient(create_app(settings), base_url="http://127.0.0.1")
+    return TestClient(create_app(settings), base_url="http://127.0.0.1", headers=AUTH)
 
 
 def post_file(client, name, content, content_type="application/octet-stream", **kwargs):
@@ -150,11 +153,92 @@ def test_unexpected_engine_failure_hides_internals(settings, monkeypatch, tmp_pa
     assert "secret" not in response.text
 
 
-def test_token_is_required_when_configured(settings):
-    client = client_for(replace(settings, api_token="s3cret"))
+def test_token_is_required(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
     assert client.get("/health").status_code == 401
     assert client.get("/health", headers={"X-LinguaNote-Token": "wrong"}).status_code == 401
-    assert client.get("/health", headers={"X-LinguaNote-Token": "s3cret"}).status_code == 200
+    assert client.get("/health", headers=AUTH).status_code == 200
+
+
+def test_startup_refuses_to_run_without_a_token(settings):
+    with pytest.raises(ConfigurationError, match="LINGUANOTE_API_TOKEN is required"):
+        create_app(replace(settings, api_token=None))
+
+
+def test_startup_rejects_a_short_token(settings):
+    with pytest.raises(ConfigurationError, match="at least"):
+        create_app(replace(settings, api_token="short"))
+
+
+def test_explicit_opt_out_allows_running_without_a_token(settings):
+    app = create_app(replace(settings, api_token=None, allow_no_auth=True))
+    assert TestClient(app, base_url="http://127.0.0.1").get("/health").status_code == 200
+
+
+def test_cross_origin_preflight_is_not_granted(settings):
+    response = client_for(settings).options(
+        "/api/v1/transcriptions",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "x-linguanote-token",
+        },
+    )
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_declared_oversized_body_is_refused_before_parsing(settings):
+    response = client_for(settings).post(
+        "/api/v1/transcriptions",
+        content=b"x",
+        headers={"Content-Length": str(10 * 1024 * 1024), "Content-Type": "multipart/form-data; boundary=b"},
+    )
+    assert response.status_code == 413
+    assert response.json()["code"] == "file_too_large"
+
+
+def test_streamed_oversized_body_is_cut_off(settings):
+    def chunks():
+        # Well-formed multipart, streamed (no Content-Length): 2.5 MiB against a 1 MiB limit plus overhead.
+        yield b'--b\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\n\r\n'
+        for _ in range(40):
+            yield b"0" * (64 * 1024)
+        yield b"\r\n--b--\r\n"
+
+    response = client_for(settings).post(
+        "/api/v1/transcriptions", content=chunks(),
+        headers={"Content-Type": "multipart/form-data; boundary=b"},
+    )
+    assert response.status_code == 413
+
+
+def test_health_reports_the_engine_effective_audio_limit(settings):
+    omnilingual = replace(settings, engine="omnilingual-ctc", max_audio_seconds=600.0)
+    assert client_for(omnilingual).get("/health").json()["limits"]["max_audio_seconds"] == 39.0
+    whisper = replace(settings, engine="faster-whisper", max_audio_seconds=600.0)
+    assert client_for(whisper).get("/health").json()["limits"]["max_audio_seconds"] == 600.0
+
+
+@needs_ffmpeg
+def test_inference_timeout_maps_to_504_and_temp_dir_is_removed(settings, monkeypatch, tmp_path):
+    import glob
+    import tempfile
+    import time
+
+    class Slow(FakeEngine):
+        def transcribe(self, audio_path):
+            time.sleep(0.5)
+            return super().transcribe(audio_path)
+
+    pattern = str(Path(tempfile.gettempdir()) / "linguanote-*")
+    before = set(glob.glob(pattern))
+    monkeypatch.setattr(registry, "_build", lambda _name: Slow())
+    short = replace(settings, inference_timeout_seconds=0)
+    response = post_file(client_for(short), "a.wav", make_wav(tmp_path / "a.wav").read_bytes())
+    assert response.status_code == 504
+    assert response.json()["code"] == "inference_timeout"
+    time.sleep(1.0)  # the worker finishes, then the deferred cleanup removes the directory
+    assert set(glob.glob(pattern)) - before == set()
 
 
 def test_non_loopback_host_is_rejected(settings):

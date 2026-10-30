@@ -7,6 +7,13 @@ SUPPORTED_EXTENSIONS = frozenset({
     ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma",
 })
 DEFAULT_CORS_ORIGINS = "http://127.0.0.1:5173"
+MIN_TOKEN_LENGTH = 16
+# Multipart framing (boundaries, headers) added on top of the file itself.
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
+
+
+class ConfigurationError(RuntimeError):
+    """Raised at startup when the service would otherwise run unprotected or misconfigured."""
 
 
 @dataclass(frozen=True)
@@ -16,8 +23,10 @@ class Settings:
     max_audio_seconds: float
     ffmpeg: str
     ffmpeg_timeout_seconds: int
+    inference_timeout_seconds: int
     cors_origins: tuple[str, ...]
     api_token: str | None
+    allow_no_auth: bool = False
 
 
 def load_settings() -> Settings:
@@ -28,6 +37,22 @@ def load_settings() -> Settings:
         max_audio_seconds=float(os.getenv("LINGUANOTE_MAX_AUDIO_SECONDS", "600")),
         ffmpeg=os.getenv("LINGUANOTE_FFMPEG", "ffmpeg"),
         ffmpeg_timeout_seconds=int(os.getenv("LINGUANOTE_FFMPEG_TIMEOUT_SECONDS", "120")),
+        inference_timeout_seconds=int(os.getenv("LINGUANOTE_INFERENCE_TIMEOUT_SECONDS", "840")),
         cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
         api_token=os.getenv("LINGUANOTE_API_TOKEN") or None,
+        allow_no_auth=os.getenv("LINGUANOTE_ALLOW_NO_AUTH") == "1",
     )
+
+
+def validate_settings(settings: Settings) -> None:
+    """Fail closed: the local API never starts without a secret unless the opt-out is explicit."""
+    if settings.api_token is None:
+        if settings.allow_no_auth:
+            return
+        raise ConfigurationError(
+            "LINGUANOTE_API_TOKEN is required. Generate one with "
+            "'python -c \"import secrets; print(secrets.token_urlsafe(32))\"' "
+            "(development only: LINGUANOTE_ALLOW_NO_AUTH=1 disables authentication)."
+        )
+    if len(settings.api_token) < MIN_TOKEN_LENGTH:
+        raise ConfigurationError(f"LINGUANOTE_API_TOKEN must be at least {MIN_TOKEN_LENGTH} characters long.")

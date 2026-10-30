@@ -7,7 +7,8 @@ from app.engines.base import EngineCapabilities, ModelUnavailableError, Transcri
 class OmnilingualCtcEngine:
     """Optional Omnilingual CTC adapter; model initialization is explicit."""
 
-    name = "omnilingual-asr-ctc"
+    # Same identifier as LINGUANOTE_ASR_ENGINE, so /health and transcription results agree.
+    name = "omnilingual-ctc"
     # The upstream inference pipeline only accepts clips shorter than 40 s.
     capabilities = EngineCapabilities(max_audio_seconds=39.0)
 
@@ -26,7 +27,13 @@ class OmnilingualCtcEngine:
                 "Install the optional 'omnilingual' dependency to use this engine."
             ) from exc
 
-        self._pipeline = ASRInferencePipeline(model_card=self.model, device="cpu")
+        try:
+            self._pipeline = ASRInferencePipeline(model_card=self.model, device="cpu")
+        except Exception as exc:
+            raise ModelUnavailableError(
+                f"The Omnilingual model '{self.model}' could not be loaded. "
+                "Check the model card name, disk space and local model cache."
+            ) from exc
 
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
         texts = self._pipeline.transcribe([str(audio_path)], batch_size=1)

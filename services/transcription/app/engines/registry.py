@@ -1,7 +1,7 @@
 """Engine selection and lifecycle: at most one model instance, loaded once."""
 import threading
 
-from app.engines.base import ModelUnavailableError, SpeechEngine
+from app.engines.base import EngineCapabilities, ModelUnavailableError, SpeechEngine
 
 _lock = threading.Lock()
 _engine: SpeechEngine | None = None
@@ -18,6 +18,17 @@ def _build(engine_name: str) -> SpeechEngine:
     raise ModelUnavailableError(
         f"Unknown ASR engine '{engine_name}'. Choose faster-whisper or omnilingual-ctc."
     )
+
+
+def capabilities_for(engine_name: str) -> EngineCapabilities | None:
+    """Declared capabilities without loading a model (they are class attributes). None if unknown."""
+    if engine_name == "faster-whisper":
+        from app.engines.faster_whisper import FasterWhisperEngine
+        return FasterWhisperEngine.capabilities
+    if engine_name == "omnilingual-ctc":
+        from app.engines.omnilingual_ctc import OmnilingualCtcEngine
+        return OmnilingualCtcEngine.capabilities
+    return None
 
 
 def get_engine(engine_name: str) -> SpeechEngine:
