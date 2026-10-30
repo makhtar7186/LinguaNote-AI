@@ -35,12 +35,18 @@ interface Options {
  * current state (a session started from the bubble shows in the main window and vice versa). The window that
  * starts a session also owns the microphone: it captures, releases the device on pause, stop, failure and
  * unmount, and re-acquires it on resume.
+ *
+ * Opening the microphone is asynchronous (permission, device). Every acquisition is tagged with an "epoch";
+ * anything that releases the microphone bumps the epoch, so a capture that finishes opening later is closed
+ * at once instead of leaking.
  */
 export function useLiveTranscription({ handleCommands = false }: Options = {}) {
   const [state, dispatch] = useReducer(liveReducer, initialLiveState);
   const bridge: LiveBridge | undefined = window.linguaNote?.live;
   const supported = Boolean(bridge);
   const captureRef = useRef<MicCapture | null>(null);
+  const epochRef = useRef(0);
+  const startingRef = useRef(false); // synchronous lock: two quick calls to start() must open one microphone
   const ownerRef = useRef(false); // true in the window that started the running session
   const statusRef = useRef(state.status);
   useEffect(() => {
@@ -48,8 +54,22 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
   }, [state.status]);
 
   const releaseMicrophone = useCallback(() => {
+    epochRef.current += 1; // invalidates any acquisition still in flight
     captureRef.current?.stop();
     captureRef.current = null;
+  }, []);
+
+  /** Opens the microphone unless it was released meanwhile. Resolves to whether it is now open. */
+  const acquireMicrophone = useCallback(async (sink: (pcm: Uint8Array) => void): Promise<boolean> => {
+    epochRef.current += 1;
+    const epoch = epochRef.current;
+    const capture = await startMicCapture(sink);
+    if (epoch !== epochRef.current) {
+      capture.stop(); // stopped, paused or closed while the device was opening
+      return false;
+    }
+    captureRef.current = capture;
+    return true;
   }, []);
 
   const syncFromMainProcess = useCallback(async () => {
@@ -83,26 +103,22 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
   // Pause releases the microphone (the indicator goes off); resume takes it back.
   useEffect(() => {
     if (!bridge || !ownerRef.current) return;
-    if (state.paused && captureRef.current) {
-      releaseMicrophone();
-    } else if (!state.paused && !captureRef.current && (state.status === "live" || state.status === "reconnecting")) {
-      startMicCapture((pcm) => bridge.sendAudio(pcm))
-        .then((capture) => {
-          if (ownerRef.current && !state.paused) captureRef.current = capture;
-          else capture.stop();
-        })
-        .catch((cause: unknown) => {
-          dispatch({
-            type: "error", code: "microphone_lost", fatal: true,
-            message: cause instanceof Error ? cause.message : "Le microphone n’a pas pu être repris.",
-          });
-          void bridge.stop();
+    if (state.paused) {
+      releaseMicrophone(); // also cancels a re-acquisition that was still opening
+    } else if (!captureRef.current && (state.status === "live" || state.status === "reconnecting")) {
+      acquireMicrophone((pcm) => bridge.sendAudio(pcm)).catch((cause: unknown) => {
+        dispatch({
+          type: "error", code: "microphone_lost", fatal: true,
+          message: cause instanceof Error ? cause.message : "Le microphone n’a pas pu être repris.",
         });
+        void bridge.stop();
+      });
     }
-  }, [bridge, state.paused, state.status, releaseMicrophone]);
+  }, [bridge, state.paused, state.status, releaseMicrophone, acquireMicrophone]);
 
   const start = useCallback(async () => {
-    if (!bridge || captureRef.current || !IDLE_STATUSES.includes(statusRef.current)) return;
+    if (!bridge || startingRef.current || captureRef.current || !IDLE_STATUSES.includes(statusRef.current)) return;
+    startingRef.current = true;
     dispatch({ type: "reset" });
     ownerRef.current = true;
     try {
@@ -110,10 +126,14 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
       // session is being opened are held back (the main process drops audio that arrives before it exists).
       const held: Uint8Array[] = [];
       let sessionOpen = false;
-      captureRef.current = await startMicCapture((pcm) => {
+      const opened = await acquireMicrophone((pcm) => {
         if (sessionOpen) bridge.sendAudio(pcm);
         else held.push(pcm);
       });
+      if (!opened) {
+        ownerRef.current = false; // stopped before the microphone finished opening: nothing to undo
+        return;
+      }
       const failure = failureOf(await bridge.start());
       if (failure) {
         releaseMicrophone();
@@ -124,6 +144,10 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
         }
         throw new Error(failure.message);
       }
+      if (!captureRef.current) {
+        await bridge.stop(); // stopped while the session was opening: end it, no microphone is left to feed it
+        return;
+      }
       sessionOpen = true;
       held.forEach((pcm) => bridge.sendAudio(pcm));
     } catch (cause) {
@@ -133,8 +157,10 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
         type: "error", code: "start_failed", fatal: true,
         message: cause instanceof Error ? cause.message : "Impossible de démarrer la transcription en direct.",
       });
+    } finally {
+      startingRef.current = false;
     }
-  }, [bridge, releaseMicrophone, syncFromMainProcess]);
+  }, [bridge, acquireMicrophone, releaseMicrophone, syncFromMainProcess]);
 
   const stop = useCallback(async () => {
     if (!bridge) return;

@@ -5,6 +5,7 @@ const api = require("./api-client.cjs");
 const launcher = require("./backend-launcher.cjs");
 const { createUrlPolicy } = require("./app-urls.cjs");
 const { createBubbleController } = require("./bubble-controller.cjs");
+const ipcTrust = require("./ipc-trust.cjs");
 const { LiveClient } = require("./live-client.cjs");
 const { createPositionStore } = require("./position-store.cjs");
 const { registerShortcuts, resolveAccelerators, unregisterShortcuts } = require("./shortcuts.cjs");
@@ -19,9 +20,11 @@ const urls = createUrlPolicy({
 
 // Production CSP is strict. Development needs inline scripts and a websocket for Vite HMR.
 const CSP_PACKAGED = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-  + "connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+  + "connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; "
+  + "frame-ancestors 'none'";
 const CSP_DEV = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
-  + "img-src 'self' data:; connect-src 'self' ws://127.0.0.1:5173; object-src 'none'; base-uri 'none'";
+  + "img-src 'self' data:; connect-src 'self' ws://127.0.0.1:5173; object-src 'none'; base-uri 'none'; "
+  + "frame-src 'none'";
 
 let mainWindow = null;
 let config;
@@ -31,11 +34,18 @@ let shortcutReport = { registered: [], failed: [] };
 // "starting" until the Python service answers; "failed" keeps the reason for the status pill.
 let backendState = { status: "starting", message: "Démarrage du service local…" };
 
+const ownership = ipcTrust.createOwnership();
+
 const bubble = createBubbleController({
   BrowserWindow,
   screen,
   preload: path.join(__dirname, "preload.cjs"),
   visibleOnStart: !SMOKE,
+  // The bubble is the recording indicator: while the microphone is in use it cannot stay hidden or gone.
+  shouldStayVisible: () => liveActive(),
+  onClosed: () => {
+    if (!quitting && liveActive()) createBubbleWindow();
+  },
   positionStore: {
     // userData is only known once the app is ready, so the store is built on first use.
     load: () => positionStore().load(),
@@ -90,7 +100,7 @@ function appContents() {
 }
 
 function isTrustedSender(event) {
-  return appContents().includes(event.sender) && urls.isAppUrl(event.senderFrame?.url ?? "");
+  return ipcTrust.isTrustedSender(event, appContents(), urls);
 }
 
 function assertTrustedSender(event) {
@@ -151,6 +161,7 @@ function ensureBubbleVisible() {
 
 function onLiveEvent(payload) {
   if (payload.type === "client_state" && payload.state === "connecting") ensureBubbleVisible();
+  if (payload.type === "client_state" && LIVE_IDLE_STATES.includes(payload.state)) ownership.release();
   broadcast("linguanote:live:event", payload);
 }
 
@@ -216,6 +227,18 @@ function registerIpc() {
     });
     try {
       liveClient.start();
+      // The window that starts a session owns the microphone for it. If that window disappears (closed, crashed)
+      // nothing feeds the session any more: end it instead of leaving it open without a microphone.
+      ownership.claim(event.sender.id);
+      const owner = event.sender;
+      const endIfOwnerGone = () => {
+        if (ownership.isOwner(owner.id)) {
+          liveClient?.stop();
+          ownership.release();
+        }
+      };
+      owner.once("destroyed", endIfOwnerGone);
+      owner.once("render-process-gone", endIfOwnerGone);
       return { ok: true };
     } catch (error) {
       return { ok: false, code: error.code ?? "unknown", message: error.message };
@@ -224,7 +247,8 @@ function registerIpc() {
 
   // Audio is fire-and-forget (many small messages): invalid chunks are dropped, never forwarded.
   ipcMain.on("linguanote:live:audio", (event, chunk) => {
-    if (!isTrustedSender(event) || !liveClient || !ArrayBuffer.isView(chunk)) return;
+    // Only the window that owns the session's microphone may feed audio; the other window cannot inject any.
+    if (!isTrustedSender(event) || !ownership.isOwner(event.sender.id) || !liveClient || !ArrayBuffer.isView(chunk)) return;
     try {
       liveClient.sendAudio(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
     } catch {
@@ -308,6 +332,19 @@ async function runSmokeTest() {
     check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "health", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
     check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
+    const frameProbe = `new Promise((resolve) => {
+      const violations = [];
+      document.addEventListener('securitypolicyviolation', (e) => violations.push(e.violatedDirective));
+      const frame = document.createElement('iframe');
+      frame.src = location.href; // an allowed page of ours, in a frame
+      document.body.appendChild(frame);
+      setTimeout(() => resolve({ violations, sawLinguaNote: Boolean(frame.contentWindow?.linguaNote) }), 1500);
+    })`;
+    for (const [label, contents] of [["main", mainWindow.webContents], ["bubble", bubble.webContents]]) {
+      const frames = await run(contents, frameProbe);
+      check(`${label} page: a frame is blocked by the CSP and gets no bridge`, frames.violations.some((d) => d.startsWith("frame-src") || d.startsWith("child-src")) && !frames.sawLinguaNote, JSON.stringify(frames));
+    }
+
     const win = bubble.window;
     const bounds = win.getBounds();
     const area = screen.getDisplayMatching(bounds).workArea;
@@ -359,7 +396,14 @@ async function runSmokeTest() {
     }
   }
 
-  check("global shortcuts: registered or reported", shortcutReport.registered.length + shortcutReport.failed.length === 3, JSON.stringify(shortcutReport));
+  // The defaults are registered for real with Electron, then released at once. Another application holding one is a
+  // legitimate outcome (reported, not an error); an accelerator Electron rejects as malformed is a real failure.
+  const malformed = shortcutReport.failed.filter((item) => item.reason !== "already_in_use_or_invalid");
+  check(
+    "default global shortcuts are valid accelerators (registered, or reported as taken by another application)",
+    shortcutReport.registered.length + shortcutReport.failed.length === 3 && malformed.length === 0,
+    JSON.stringify({ registered: shortcutReport.registered.map((item) => item.name), taken: shortcutReport.failed.map((item) => item.name), malformed }),
+  );
   const ok = checks.every((item) => item.ok);
   const report = JSON.stringify({ ok, checks, shortcuts: shortcutReport }, null, 1);
   if (process.env.LINGUANOTE_SMOKE_OUTPUT) fs.writeFileSync(process.env.LINGUANOTE_SMOKE_OUTPUT, report, "utf8");
@@ -395,7 +439,14 @@ app.whenReady().then(() => {
   createMainWindow();
   createBubbleWindow();
   if (!SMOKE) registerGlobalShortcuts();
-  else shortcutReport = { registered: [], failed: ["toggleLive", "pauseLive", "toggleBubble"].map((name) => ({ name, accelerator: "", reason: "skipped_in_smoke_test" })) };
+  else {
+    // Smoke test: really register the defaults to prove they are valid, then release them immediately.
+    const accelerators = resolveAccelerators();
+    shortcutReport = registerShortcuts(globalShortcut, Object.fromEntries(
+      Object.entries(accelerators).map(([name, accelerator]) => [name, { accelerator, handler: () => {} }]),
+    ));
+    unregisterShortcuts(globalShortcut, shortcutReport.registered);
+  }
 
   app.on("activate", () => {
     if (!mainWindow) createMainWindow();

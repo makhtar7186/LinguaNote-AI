@@ -20,7 +20,7 @@ function fakeGlobalShortcut(taken: string[] = [], throwing: string[] = []) {
 describe("resolveAccelerators", () => {
   it("uses the documented defaults", () => {
     expect(shortcuts.resolveAccelerators({})).toEqual({
-      toggleLive: "CommandOrControl+Alt+Space", pauseLive: "CommandOrControl+Alt+P", toggleBubble: "CommandOrControl+Alt+B",
+      toggleLive: "CommandOrControl+Alt+D", pauseLive: "CommandOrControl+Alt+P", toggleBubble: "CommandOrControl+Alt+B",
     });
   });
 

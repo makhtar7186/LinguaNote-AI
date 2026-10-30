@@ -52,7 +52,8 @@ child.on("exit", (code) => {
     process.exit(1);
   }
   for (const item of report.checks ?? []) {
-    console.log(`${item.ok ? "PASS" : "FAIL"}  ${item.name}${item.ok || !item.detail ? "" : `  ->  ${item.detail}`}`);
+    const showDetail = item.detail && (!item.ok || process.env.LINGUANOTE_SMOKE_VERBOSE === "1");
+    console.log(`${item.ok ? "PASS" : "FAIL"}  ${item.name}${showDetail ? `  ->  ${item.detail}` : ""}`);
   }
   if (report.error) console.error(report.error);
   const failed = (report.checks ?? []).filter((item) => !item.ok).length;

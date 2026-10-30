@@ -282,4 +282,49 @@ describe("live panel", () => {
     fireEvent.click(screen.getByText("Afficher la bulle"));
     expect((await screen.findByRole("alert")).textContent).toBe("Impossible pour le moment.");
   });
+
+  it("pausing again while the microphone is being re-opened closes it as soon as it arrives", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    harness.emit({ type: "client_state", state: "active" });
+    harness.emit({ type: "pause_state", paused: true });
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalledOnce());
+
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    harness.emit({ type: "pause_state", paused: false }); // resume: the device starts opening
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    harness.emit({ type: "pause_state", paused: true }); // paused again before it finished opening
+
+    const late = { stop: vi.fn() };
+    await act(async () => finish(late));
+    expect(late.stop).toHaveBeenCalledOnce(); // the microphone must not stay open while paused
+  });
+
+  it("stopping while the microphone is being re-opened after a resume does not leak it", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    harness.emit({ type: "client_state", state: "active" });
+    harness.emit({ type: "pause_state", paused: true });
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalledOnce());
+
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    harness.emit({ type: "pause_state", paused: false });
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    fireEvent.click(await screen.findByText("Arrêter"));
+    await waitFor(() => expect(harness.live.stop).toHaveBeenCalled());
+
+    const late = { stop: vi.fn() };
+    await act(async () => finish(late));
+    expect(late.stop).toHaveBeenCalledOnce();
+  });
 });

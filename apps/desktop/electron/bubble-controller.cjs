@@ -11,11 +11,19 @@ const SAVE_DELAY_MS = 400;
  * @param {string} deps.preload       absolute path of the preload script
  * @param {(window: object) => void} deps.loadPage  loads the bubble page into the window
  * @param {boolean} [deps.visibleOnStart=true]  false in the smoke test, which must not flash windows
+ * @param {() => boolean} [deps.shouldStayVisible]  true while the microphone is in use: the bubble is the recording
+ *   indicator, so any hide that did not come from setVisible() (the OS, another tool) is undone at once
+ * @param {() => void} [deps.onClosed]  the window disappeared (closed or destroyed by something other than destroy())
  */
-function createBubbleController({ BrowserWindow, screen, positionStore, preload, loadPage, visibleOnStart = true }) {
+function createBubbleController({
+  BrowserWindow, screen, positionStore, preload, loadPage, visibleOnStart = true,
+  shouldStayVisible = () => false, onClosed = () => {},
+}) {
   let win = null;
   let expanded = false;
   let saveTimer = null;
+  let intentionalHide = false;
+  let destroyedByUs = false;
 
   const workAreaFor = (bounds) => geometry.pickWorkArea(bounds, screen.getAllDisplays(), screen.getPrimaryDisplay());
 
@@ -29,6 +37,7 @@ function createBubbleController({ BrowserWindow, screen, positionStore, preload,
 
   function create() {
     if (win && !win.isDestroyed()) return win;
+    destroyedByUs = false;
     expanded = false;
     win = new BrowserWindow({
       ...startBounds(),
@@ -62,9 +71,14 @@ function createBubbleController({ BrowserWindow, screen, positionStore, preload,
         }
       }, SAVE_DELAY_MS);
     });
+    // A hide we did not ask for, while recording, would leave the microphone open with no indicator.
+    win.on("hide", () => {
+      if (!intentionalHide && win && !win.isDestroyed() && shouldStayVisible()) win.showInactive();
+    });
     win.on("closed", () => {
       clearTimeout(saveTimer);
       win = null;
+      if (!destroyedByUs) onClosed();
     });
     return win;
   }
@@ -88,13 +102,22 @@ function createBubbleController({ BrowserWindow, screen, positionStore, preload,
     /** Shows without stealing focus, or hides. Returns the resulting visibility. */
     setVisible(value) {
       if (!win || win.isDestroyed()) return false;
-      if (value) win.showInactive();
-      else win.hide();
+      if (value) {
+        win.showInactive();
+      } else {
+        intentionalHide = true;
+        try {
+          win.hide();
+        } finally {
+          intentionalHide = false;
+        }
+      }
       return win.isVisible();
     },
 
     destroy() {
       clearTimeout(saveTimer);
+      destroyedByUs = true;
       if (win && !win.isDestroyed()) win.destroy();
       win = null;
     },

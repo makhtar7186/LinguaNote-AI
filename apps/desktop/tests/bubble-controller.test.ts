@@ -38,11 +38,14 @@ class FakeWindow {
 const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
 const screen = { getAllDisplays: () => [primary], getPrimaryDisplay: () => primary };
 
-function build(saved: { x: number; y: number } | null = null, visibleOnStart = true) {
+function build(
+  saved: { x: number; y: number } | null = null, visibleOnStart = true,
+  extra: { shouldStayVisible?: () => boolean; onClosed?: () => void } = {},
+) {
   const positionStore = { load: vi.fn().mockReturnValue(saved), save: vi.fn() };
   const loadPage = vi.fn();
   const controller = createBubbleController({
-    BrowserWindow: FakeWindow, screen, positionStore, preload: "/preload.cjs", loadPage, visibleOnStart,
+    BrowserWindow: FakeWindow, screen, positionStore, preload: "/preload.cjs", loadPage, visibleOnStart, ...extra,
   });
   return { controller, positionStore, loadPage };
 }
@@ -158,5 +161,45 @@ describe("expanding, showing and remembering the position", () => {
     controller.destroy();
     expect(window.destroyed).toBe(true);
     expect(controller.window).toBeNull();
+  });
+});
+
+describe("the bubble is the recording indicator", () => {
+  it("is shown again at once if something hides it while the microphone is in use", () => {
+    let recording = true;
+    const { controller } = build(null, true, { shouldStayVisible: () => recording });
+    controller.create();
+    FakeWindow.last.showInactive();
+    FakeWindow.last.hide(); // not through setVisible: the OS, another tool...
+    FakeWindow.last.emit("hide");
+    expect(FakeWindow.last.visible).toBe(true);
+
+    recording = false; // nothing recording any more: hiding is just hiding
+    FakeWindow.last.hide();
+    FakeWindow.last.emit("hide");
+    expect(FakeWindow.last.visible).toBe(false);
+  });
+
+  it("does not fight its own, deliberate hide", () => {
+    const { controller } = build(null, true, { shouldStayVisible: () => true });
+    controller.create();
+    FakeWindow.last.showInactive();
+    const originalHide = FakeWindow.last.hide.bind(FakeWindow.last);
+    FakeWindow.last.hide = () => { originalHide(); FakeWindow.last.emit("hide"); }; // Electron emits "hide" synchronously
+    expect(controller.setVisible(false)).toBe(false); // the caller (main process) decides if that is allowed
+    expect(FakeWindow.last.visible).toBe(false);
+  });
+
+  it("tells the main process when the window disappears by itself, but not when it destroys it", () => {
+    const onClosed = vi.fn();
+    const { controller } = build(null, true, { onClosed });
+    controller.create();
+    FakeWindow.last.emit("closed"); // closed by the user/OS
+    expect(onClosed).toHaveBeenCalledOnce();
+
+    controller.create(); // recreated
+    controller.destroy(); // our own shutdown
+    FakeWindow.last.emit("closed");
+    expect(onClosed).toHaveBeenCalledOnce();
   });
 });

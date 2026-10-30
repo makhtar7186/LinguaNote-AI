@@ -36,9 +36,10 @@ Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé cou
 | Fenêtre Electron séparée, cycle de vie explicite (création, position mémorisée, déploiement ancré, masquage) | fait : `bubble-controller.cjs`, testé avec de fausses fenêtres ; vérifié dans la vraie application (taille, toujours au-dessus, non focalisable, dans un écran, déploiement/réduction à la même place) |
 | États : inactif, enregistrement, pause, traitement, erreur ; déployer / réduire | fait (tests de composants) |
 | Démarrer, pause, reprise, arrêt | fait ; la pause libère le micro et envoie un silence final pour clore la phrase |
-| Raccourcis globaux (démarrer/arrêter, pause/reprise, afficher/masquer) | fait : enregistrement signalé honnêtement si une touche est prise ; **non éprouvé avec de vraies touches** (volontairement non enregistrés pendant le test de fumée) |
+| Raccourcis globaux (démarrer/arrêter, pause/reprise, afficher/masquer) | fait : enregistrement signalé honnêtement si une touche est prise ; le test de fumée enregistre réellement les trois accélérateurs par défaut auprès d'Electron puis les libère aussitôt (il vérifie leur validité, pas leur effet) ; **jamais éprouvés avec de vraies touches** |
 | Indicateur d'enregistrement clair, jamais caché | fait : anneau rouge pulsant + point REC ; démarrer ouvre toujours la bulle ; elle ne peut pas être masquée pendant l'enregistrement |
 | Bulle réactive, indépendante des traitements longs | fait par construction (la session et les événements sont dans le processus principal, diffusés à toutes les fenêtres) |
+| Micro : pas de fuite à l'arrêt, à la pause, à la fermeture ni quand ces actions croisent l'ouverture du micro | fait : jeton d'époque + verrou de démarrage ; 5 tests de course dont la suppression des gardes fait échouer |
 | **Non vérifié** | l'apparence réelle (transparence, ombres, animations) ; le glisser-déposer de la bulle à la souris ; plusieurs écrans ; un vrai microphone ; l'application packagée ; Windows seulement |
 
 Limites connues : la bulle n'insère pas encore le texte dans l'application active (phase 5) ; la capture micro reste dans une fenêtre (la bulle, ou la fenêtre principale qui a démarré la session) ; fermer la fenêtre principale ferme l'application.

@@ -75,7 +75,10 @@ const final = (id: number, text: string, eventId: number) => ({
 });
 const root = () => screen.getByTestId("bubble");
 
-beforeEach(() => vi.mocked(startMicCapture).mockReset());
+beforeEach(() => {
+  // Block body on purpose: a hook that returns a function is treated as its teardown and would be called.
+  vi.mocked(startMicCapture).mockReset();
+});
 afterEach(() => {
   cleanup();
   delete window.linguaNote;
@@ -240,5 +243,58 @@ describe("shortcut commands", () => {
     harness.command(null);
     expect(harness.live.start).toHaveBeenCalledOnce();
     expect(harness.live.stop).toHaveBeenCalledOnce();
+  });
+
+  it("two start requests in the same instant open a single microphone", async () => {
+    const harness = install();
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<BubbleApp />);
+
+    // Both arrive before React re-renders (one batch): the synchronous lock, not the status, must refuse the second.
+    act(() => {
+      harness.command({ action: "toggle_live" });
+      harness.command({ action: "toggle_live" });
+    });
+    expect(startMicCapture).toHaveBeenCalledTimes(1);
+    const capture = { stop: vi.fn() };
+    await act(async () => finish(capture));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalledOnce());
+  });
+
+  it("stopping while the microphone is still opening closes it as soon as it arrives", async () => {
+    const harness = install();
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    render(<BubbleApp />);
+    harness.command({ action: "toggle_live" }); // start: the device is being opened
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    harness.emit({ type: "client_state", state: "connecting" });
+
+    harness.command({ action: "toggle_live" }); // the user changes their mind
+    await waitFor(() => expect(harness.live.stop).toHaveBeenCalledOnce());
+
+    const late = { stop: vi.fn() };
+    await act(async () => finish(late));
+    expect(late.stop).toHaveBeenCalledOnce(); // not leaked
+    expect(harness.live.start).not.toHaveBeenCalled(); // and no session was opened for nothing
+  });
+
+  it("closing the window while the microphone is still opening closes it as soon as it arrives", async () => {
+    const harness = install();
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const view = render(<BubbleApp />);
+    harness.command({ action: "toggle_live" });
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    view.unmount();
+
+    const late = { stop: vi.fn() };
+    await act(async () => finish(late));
+    expect(late.stop).toHaveBeenCalledOnce();
+    expect(harness.live.start).not.toHaveBeenCalled();
   });
 });

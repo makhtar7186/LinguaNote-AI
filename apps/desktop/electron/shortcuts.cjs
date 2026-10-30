@@ -1,7 +1,7 @@
 // Global keyboard shortcuts. Free of Electron imports: `globalShortcut` is passed in so it can be faked in tests.
 
 const DEFAULT_ACCELERATORS = {
-  toggleLive: "CommandOrControl+Alt+Space", // start / stop dictation
+  toggleLive: "CommandOrControl+Alt+D", // start / stop dictation (Ctrl+Alt+Space was already taken on the test machine)
   pauseLive: "CommandOrControl+Alt+P", // pause / resume dictation
   toggleBubble: "CommandOrControl+Alt+B", // show / hide the floating bubble
 };
