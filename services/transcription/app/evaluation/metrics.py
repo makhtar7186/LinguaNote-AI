@@ -50,7 +50,12 @@ EMPTY = EditCounts(0, 0, 0, 0)
 
 
 def edit_counts(reference: Sequence[str], hypothesis: Sequence[str]) -> EditCounts:
-    """Levenshtein alignment split into substitutions, deletions (missed) and insertions (extra)."""
+    """Levenshtein alignment split into substitutions, deletions (missed) and insertions (extra).
+
+    The total number of errors is the minimum edit distance and is unambiguous. When several optimal
+    alignments exist, the S/D/I split follows the tuple order (total, S, D, I): fewest substitutions,
+    then fewest deletions. Compare totals (`errors`) across systems; treat the breakdown as indicative.
+    """
     # Each cell: (total, substitutions, deletions, insertions). Two rows keep memory linear.
     previous = [(j, 0, 0, j) for j in range(len(hypothesis) + 1)]
     for i, ref_token in enumerate(reference, start=1):

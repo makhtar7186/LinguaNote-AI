@@ -149,7 +149,8 @@ def render_markdown(model_runs: Sequence[dict]) -> str:
             f"### {meta['engine']} / {meta['model']}",
             "",
             f"Chargement du modèle : {_num(meta.get('load_seconds'), 1)} s · "
-            f"pic mémoire : {'n/a' if peak is None else f'{peak / 2**20:.0f} Mio'} · "
+            f"pic mémoire du processus d'évaluation (interpréteur compris) : "
+            f"{'n/a' if peak is None else f'{peak / 2**20:.0f} Mio'} · "
             f"{meta.get('device', 'cpu')} ({meta.get('compute_type', 'n/a')})",
             "",
             "| Catégorie | Clips (échecs) | WER | CER | S / D / I | Langue détectée = attendue "

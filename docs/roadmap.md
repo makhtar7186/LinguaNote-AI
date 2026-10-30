@@ -9,7 +9,7 @@ Ordre imposé par [AGENTS.md](../AGENTS.md). Légende : fait = implémenté et t
 | Structure du dépôt, journalisation | fait |
 | Transcription de fichiers (FFmpeg + faster-whisper), segments et langue estimée | fait (tests avec moteur factice ; le vrai modèle n'est pas exécuté dans les tests) |
 | API testée (validation, erreurs, jeton, concurrence) | fait (Pytest) |
-| Outillage d'évaluation (manifeste validé, WER/CER micro-moyennés, latence, facteur temps réel, pic mémoire, hallucinations sur silence, rapport) | fait : `python -m app.evaluation`, testé (Pytest) |
+| Outillage d'évaluation (manifeste validé, WER/CER micro-moyennés, latence, facteur temps réel, pic mémoire, hallucinations sur silence, rapport) | fait : `python -m app.evaluation` ; 65 tests Pytest passés le 2026-10-30 (ruff propre) |
 | Mesure FR / EN sur corpus **synthétique** (`tiny`, `base`, `small`) | fait : voir [evaluation-results.md](evaluation-results.md). Valide l'outillage et la vitesse, **pas** la qualité sur de vraies voix |
 | Évaluation sur de **vraie parole** FR / EN, **wolof**, **mixte** | **à faire, bloquée par les données** : aucun clip autorisé avec transcription de référence. C'est la condition pour affirmer un support du wolof |
 | Comparaison de modèles (`medium`, `large-v3`, autres moteurs) | à faire (poids non téléchargés sans accord) |
@@ -55,4 +55,4 @@ Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un 
 - Pas de test Playwright / Electron de bout en bout.
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
 - Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.
-- Aucune mesure de qualité (phase 1) : le support du wolof et du code-switching reste non démontré.
+- Aucune mesure sur de la **parole réelle** (phase 1 : seul un corpus synthétique FR/EN a été mesuré) : le support du wolof et du code-switching reste non démontré.

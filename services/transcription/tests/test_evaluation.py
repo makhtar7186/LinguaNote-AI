@@ -52,6 +52,18 @@ def test_word_error_rate_can_exceed_one():
     assert word_counts("a", "x y z").rate == pytest.approx(3.0)
 
 
+def test_total_errors_do_not_depend_on_which_optimal_alignment_is_chosen():
+    swapped = edit_counts("a b".split(), "b a".split())
+    assert swapped.errors == 2  # the total is the minimum edit distance; only the S/D/I split is indicative
+    assert swapped.reference_length == 2
+
+
+def test_number_format_and_spacing_are_real_differences_not_hidden():
+    assert word_counts("à 8 heures", "à 8h").errors > 0  # format difference stays visible
+    assert word_counts("l'été", "l’été").errors == 0  # typographic apostrophe is unified
+    assert char_counts("a b", "ab").errors == 1  # CER counts the space
+
+
 # --- manifest --------------------------------------------------------------------------------------------
 
 HEADER = "id,audio_path,category,reference,split,synthetic,rights,speaker,context\n"
@@ -94,6 +106,34 @@ def test_manifest_reports_every_problem_at_once(tmp_path):
     for expected in ("duplicate id", "category must be", "empty reference", "rights/consent",
                      "split must be", "audio file not found", "silence clip must have an empty reference"):
         assert expected in message
+
+
+def test_manifest_refuses_audio_outside_its_folder(tmp_path):
+    outside = tmp_path / "outside.wav"
+    outside.write_bytes(b"RIFF")
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    manifest = write_manifest(corpus, [
+        "up,../outside.wav,fr,texte,dev,1,own,,",
+        f"abs,{outside},fr,texte,dev,1,own,,",
+    ], audio=())
+    with pytest.raises(ManifestError) as raised:
+        load_manifest(manifest)
+    assert str(raised.value).count("audio_path must stay inside the manifest folder") == 2
+
+
+def test_split_filter_still_validates_the_whole_manifest(tmp_path):
+    manifest = write_manifest(tmp_path, [
+        "ok,a.wav,fr,texte,dev,1,own,,",
+        "bad,a.wav,klingon,texte,validation,1,own,,",
+    ])
+    with pytest.raises(ManifestError, match="category must be"):
+        load_manifest(manifest, split="dev")
+
+
+def test_split_without_clips_returns_an_empty_list(tmp_path):
+    manifest = write_manifest(tmp_path, ["ok,a.wav,fr,texte,dev,1,own,,"])
+    assert load_manifest(manifest, split="validation") == []
 
 
 def test_manifest_rejects_missing_columns(tmp_path):
@@ -202,6 +242,40 @@ def test_evaluate_item_records_engine_failure_instead_of_aborting(tmp_path):
     result = evaluate_item(ScriptedEngine(fail=True), corpus_item(tmp_path), ffmpeg="ffmpeg")
     assert result.error == "RuntimeError: engine exploded"
     assert result.hypothesis == ""
+
+
+def _isolate_download_env(monkeypatch):
+    for name in ("HF_HUB_OFFLINE", "LINGUANOTE_ALLOW_MODEL_DOWNLOAD", "LINGUANOTE_WHISPER_MODEL",
+                 "LINGUANOTE_MODEL_CARD"):
+        monkeypatch.delenv(name, raising=False)  # registers the restore for what prepare_environment sets
+
+
+def test_downloads_are_blocked_by_default_for_every_engine(monkeypatch):
+    import os
+
+    from app.evaluation.__main__ import prepare_environment
+
+    _isolate_download_env(monkeypatch)
+    monkeypatch.setenv("LINGUANOTE_ALLOW_MODEL_DOWNLOAD", "1")  # even a leaked permission is cleared
+    prepare_environment("omnilingual-ctc", "omniASR_CTC_300M_v2", allow_download=False)
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert "LINGUANOTE_ALLOW_MODEL_DOWNLOAD" not in os.environ
+    assert os.environ["LINGUANOTE_MODEL_CARD"] == "omniASR_CTC_300M_v2"
+
+
+def test_allow_download_opens_both_gates_only_where_needed(monkeypatch):
+    import os
+
+    from app.evaluation.__main__ import prepare_environment
+
+    _isolate_download_env(monkeypatch)
+    prepare_environment("faster-whisper", "base", allow_download=True)
+    assert "HF_HUB_OFFLINE" not in os.environ
+    assert "LINGUANOTE_ALLOW_MODEL_DOWNLOAD" not in os.environ  # not needed for Whisper
+    assert os.environ["LINGUANOTE_WHISPER_MODEL"] == "base"
+
+    prepare_environment("omnilingual-ctc", "omniASR_CTC_300M_v2", allow_download=True)
+    assert os.environ["LINGUANOTE_ALLOW_MODEL_DOWNLOAD"] == "1"
 
 
 def test_evaluate_item_records_missing_ffmpeg_as_a_failure(tmp_path):

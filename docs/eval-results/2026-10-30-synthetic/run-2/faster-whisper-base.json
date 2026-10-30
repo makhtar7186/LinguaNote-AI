@@ -1,0 +1,480 @@
+{
+ "meta": {
+  "engine": "faster-whisper",
+  "model": "base",
+  "split": null,
+  "device": "cpu",
+  "compute_type": "int8",
+  "manifest": "manifest.csv",
+  "load_seconds": 1.542658999998821,
+  "peak_memory_bytes": 369618944,
+  "date": "2026-10-30T14:57:38",
+  "environment": {
+   "python": "3.11.5",
+   "platform": "Windows-10-10.0.26200-SP0",
+   "processor": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+   "logical_cpus": 8,
+   "cpu_threads_setting": "4",
+   "packages": {
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.5.0",
+    "av": "18.0.0",
+    "onnxruntime": "1.20.1",
+    "numpy": "2.2.6"
+   },
+   "ffmpeg": "ffmpeg version 9.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+  }
+ },
+ "items": [
+  {
+   "id": "fr-01",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 5.0036875,
+   "inference_seconds": 1.9684103000035975,
+   "detected_language": "fr",
+   "language_probability": 0.994895875453949,
+   "reference": "Bonjour, je voudrais réserver une table pour deux personnes ce soir.",
+   "hypothesis": "Bonjour, je voudrais réserver une table pour deux personnes ce soir.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 11
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 66
+   },
+   "error": null
+  },
+  {
+   "id": "fr-02",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 4.0239375,
+   "inference_seconds": 2.0297563999920385,
+   "detected_language": "fr",
+   "language_probability": 0.996075451374054,
+   "reference": "Le train pour Dakar part de la gare à 8 heures du matin.",
+   "hypothesis": "Le train pour Dakar part de la gare à 8h du matin.",
+   "word_errors": {
+    "substitutions": 1,
+    "deletions": 1,
+    "insertions": 0,
+    "reference_length": 13
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 6,
+    "insertions": 0,
+    "reference_length": 55
+   },
+   "error": null
+  },
+  {
+   "id": "fr-03",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 4.038875,
+   "inference_seconds": 2.0214894999953685,
+   "detected_language": "fr",
+   "language_probability": 0.9923936128616333,
+   "reference": "Nous devons terminer le rapport avant la réunion de vendredi.",
+   "hypothesis": "Nous devons terminer le rapport avant la réunion de vendredi.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 10
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 60
+   },
+   "error": null
+  },
+  {
+   "id": "fr-04",
+   "category": "fr",
+   "split": "validation",
+   "synthetic": true,
+   "audio_seconds": 4.598875,
+   "inference_seconds": 2.1373475000000326,
+   "detected_language": "fr",
+   "language_probability": 0.9993135929107666,
+   "reference": "La pluie a commencé à tomber pendant que nous traversions le marché.",
+   "hypothesis": "La pluie a commencé à tomber pendant que nous traversions le marché.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 12
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 67
+   },
+   "error": null
+  },
+  {
+   "id": "fr-05",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 5.0088125,
+   "inference_seconds": 2.0885691000003135,
+   "detected_language": "fr",
+   "language_probability": 0.9990310668945312,
+   "reference": "Pouvez-vous m'envoyer le document par courrier électronique, s'il vous plaît ?",
+   "hypothesis": "Pouvez-vous m'envoyer le document par courrier électronique, s'il vous plaît.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 11
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 75
+   },
+   "error": null
+  },
+  {
+   "id": "fr-06",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 3.6338125,
+   "inference_seconds": 1.8506752999965101,
+   "detected_language": "fr",
+   "language_probability": 0.9921189546585083,
+   "reference": "Mon frère travaille dans une école près de la mer.",
+   "hypothesis": "Mon frère travaille dans une école près de la mer.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 10
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 49
+   },
+   "error": null
+  },
+  {
+   "id": "fr-07",
+   "category": "fr",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 4.3939375,
+   "inference_seconds": 1.7868850999948336,
+   "detected_language": "fr",
+   "language_probability": 0.9972521662712097,
+   "reference": "Il faut ajouter un peu de sel et laisser cuire pendant 20 minutes.",
+   "hypothesis": "Il faut ajouter un peu de sel et laisser cuire pendant 20 minutes.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 13
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 65
+   },
+   "error": null
+  },
+  {
+   "id": "fr-08",
+   "category": "fr",
+   "split": "validation",
+   "synthetic": true,
+   "audio_seconds": 3.1839375,
+   "inference_seconds": 1.6441491000005044,
+   "detected_language": "fr",
+   "language_probability": 0.9960348010063171,
+   "reference": "Merci beaucoup pour votre aide, à demain.",
+   "hypothesis": "Merci beaucoup pour votre aide, à demain.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 7
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 39
+   },
+   "error": null
+  },
+  {
+   "id": "en-01",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 4.4186875,
+   "inference_seconds": 1.6678206999931717,
+   "detected_language": "en",
+   "language_probability": 0.9955848455429077,
+   "reference": "Good morning, I would like to book a table for two people tonight.",
+   "hypothesis": "Good morning. I would like to book a table for two people tonight.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 13
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 64
+   },
+   "error": null
+  },
+  {
+   "id": "en-02",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 4.268625,
+   "inference_seconds": 1.7112699999997858,
+   "detected_language": "en",
+   "language_probability": 0.9861002564430237,
+   "reference": "The train to the airport leaves from the main station at 8 in the morning.",
+   "hypothesis": "The train to the airport leaves from the main station at 8 in the morning.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 15
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 73
+   },
+   "error": null
+  },
+  {
+   "id": "en-03",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 3.6786875,
+   "inference_seconds": 1.6321129000134533,
+   "detected_language": "en",
+   "language_probability": 0.9923045039176941,
+   "reference": "We need to finish the report before the meeting on Friday.",
+   "hypothesis": "We need to finish the report before the meeting on Friday.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 11
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 57
+   },
+   "error": null
+  },
+  {
+   "id": "en-04",
+   "category": "en",
+   "split": "validation",
+   "synthetic": true,
+   "audio_seconds": 3.544,
+   "inference_seconds": 1.6370384999900125,
+   "detected_language": "en",
+   "language_probability": 0.986663818359375,
+   "reference": "It started to rain while we were walking through the market.",
+   "hypothesis": "It started to rain while we were walking through the market.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 11
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 59
+   },
+   "error": null
+  },
+  {
+   "id": "en-05",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 3.9639375,
+   "inference_seconds": 1.6269750999927055,
+   "detected_language": "en",
+   "language_probability": 0.9922512173652649,
+   "reference": "Could you send me the document by email, please?",
+   "hypothesis": "Could you send me the document by email? Please?",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 9
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 46
+   },
+   "error": null
+  },
+  {
+   "id": "en-06",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 2.969125,
+   "inference_seconds": 1.628105699986918,
+   "detected_language": "en",
+   "language_probability": 0.9923555850982666,
+   "reference": "My brother works at a school near the sea.",
+   "hypothesis": "My brother works at a school near the sea.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 9
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 41
+   },
+   "error": null
+  },
+  {
+   "id": "en-07",
+   "category": "en",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 3.428875,
+   "inference_seconds": 1.6409600999904796,
+   "detected_language": "en",
+   "language_probability": 0.9948573112487793,
+   "reference": "Add a little salt and let it cook for 20 minutes.",
+   "hypothesis": "Add a little salt and let it cook for 20 minutes.",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 11
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 48
+   },
+   "error": null
+  },
+  {
+   "id": "en-08",
+   "category": "en",
+   "split": "validation",
+   "synthetic": true,
+   "audio_seconds": 3.8589375,
+   "inference_seconds": 1.664706199997454,
+   "detected_language": "en",
+   "language_probability": 0.9769679307937622,
+   "reference": "Thank you very much for your help, see you tomorrow.",
+   "hypothesis": "Thank you very much for your help see you tomorrow",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 10
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 50
+   },
+   "error": null
+  },
+  {
+   "id": "silence-01",
+   "category": "silence",
+   "split": "dev",
+   "synthetic": true,
+   "audio_seconds": 3.0,
+   "inference_seconds": 0.7999821999983396,
+   "detected_language": "en",
+   "language_probability": 0.5440036654472351,
+   "reference": "",
+   "hypothesis": "",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 0
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 0
+   },
+   "error": null
+  },
+  {
+   "id": "silence-02",
+   "category": "silence",
+   "split": "validation",
+   "synthetic": true,
+   "audio_seconds": 3.0,
+   "inference_seconds": 0.7911046000081114,
+   "detected_language": "en",
+   "language_probability": 0.5440036654472351,
+   "reference": "",
+   "hypothesis": "",
+   "word_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 0
+   },
+   "char_errors": {
+    "substitutions": 0,
+    "deletions": 0,
+    "insertions": 0,
+    "reference_length": 0
+   },
+   "error": null
+  }
+ ]
+}

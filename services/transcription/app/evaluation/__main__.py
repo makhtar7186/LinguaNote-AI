@@ -22,10 +22,24 @@ MODEL_ENV = {"faster-whisper": "LINGUANOTE_WHISPER_MODEL", "omnilingual-ctc": "L
 DEFAULT_OUT = Path(__file__).resolve().parents[4] / "data" / "eval-results"  # repository data/ (git-ignored)
 
 
-def _single(args: argparse.Namespace) -> int:
-    if not args.allow_download:
+def prepare_environment(engine: str, model: str, *, allow_download: bool) -> None:
+    """Select the model and the download policy for this process.
+
+    HF_HUB_OFFLINE only covers Hugging Face downloads (faster-whisper). Omnilingual has its own explicit
+    gate, LINGUANOTE_ALLOW_MODEL_DOWNLOAD, which --allow-download must also open.
+    """
+    os.environ[MODEL_ENV[engine]] = model
+    if allow_download:
+        os.environ.pop("HF_HUB_OFFLINE", None)
+        if engine == "omnilingual-ctc":
+            os.environ["LINGUANOTE_ALLOW_MODEL_DOWNLOAD"] = "1"
+    else:
         os.environ["HF_HUB_OFFLINE"] = "1"  # a missing local model fails instead of downloading silently
-    os.environ[MODEL_ENV[args.engine]] = args.model
+        os.environ.pop("LINGUANOTE_ALLOW_MODEL_DOWNLOAD", None)
+
+
+def _single(args: argparse.Namespace) -> int:
+    prepare_environment(args.engine, args.model, allow_download=args.allow_download)
     settings = load_settings()
     items = load_manifest(Path(args.manifest), split=args.split)
 

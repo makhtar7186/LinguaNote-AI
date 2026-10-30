@@ -6,7 +6,7 @@ Garder un contrat `SpeechEngine` indépendant du fournisseur. Utiliser faster-wh
 
 ## Mesures disponibles (voir [evaluation-results.md](evaluation-results.md))
 
-Sur corpus synthétique FR/EN uniquement et sur le CPU de référence : `tiny` ≈ 0,2× le temps réel (278 Mio), `base` ≈ 0,4× (354 Mio), `small` ≈ 1,2–1,4× (724 Mio, plus lent que le temps réel). `base` reste le choix provisoire : marge d'environ 2× pour un traitement par blocs. `small` est écarté du direct sur cette machine tant qu'aucune optimisation n'est démontrée. Aucune mesure sur vraie parole, sur le wolof ou sur l'alternance de langues : le choix du moteur pour ces cas reste ouvert.
+Observations préliminaires, corpus synthétique FR/EN uniquement, CPU de référence, deux exécutions : facteur temps réel `tiny` 0,17–0,24 (pic processus 278 Mio), `base` 0,41–0,46 (≈ 353 Mio), `small` 1,24–2,52 (724 Mio). `base` reste le choix **provisoire** par défaut ; ce n'est pas une conclusion mesurée sur le direct, qui n'a pas été testé. `small` a été plus lent que le temps réel sur ces clips : il faudra le re-mesurer en traitement par blocs avant de l'écarter ou de le retenir. Aucune mesure sur vraie parole, sur le wolof ou sur l'alternance de langues : le choix du moteur pour ces cas reste ouvert.
 
 ## Blocage Windows constaté
 

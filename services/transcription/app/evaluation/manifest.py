@@ -41,7 +41,12 @@ def _parse_bool(value: str) -> bool | None:
 
 
 def load_manifest(path: Path, *, split: str | None = None) -> list[CorpusItem]:
+    """Validate the WHOLE manifest (a bad row in another split still fails), then filter by split.
+
+    `silence` is a label: the loader cannot tell whether the audio really is silent.
+    """
     path = Path(path)
+    corpus_root = path.parent.resolve()
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         missing = [column for column in REQUIRED_COLUMNS if column not in (reader.fieldnames or [])]
@@ -80,8 +85,11 @@ def load_manifest(path: Path, *, split: str | None = None) -> list[CorpusItem]:
         if not rights:
             problems.append(f"{where} ({item_id}): rights/consent must be stated")
 
-        audio = (path.parent / (row["audio_path"] or "").strip()).resolve()
-        if not audio.is_file():
+        audio = (corpus_root / (row["audio_path"] or "").strip()).resolve()
+        if not audio.is_relative_to(corpus_root):
+            # Absolute paths and '..' would let a shared manifest point at arbitrary local files.
+            problems.append(f"{where} ({item_id}): audio_path must stay inside the manifest folder")
+        elif not audio.is_file():
             problems.append(f"{where} ({item_id}): audio file not found: {row['audio_path']}")
 
         if len(problems) == problems_before:
