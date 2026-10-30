@@ -327,4 +327,53 @@ describe("live panel", () => {
     await act(async () => finish(late));
     expect(late.stop).toHaveBeenCalledOnce();
   });
+
+  it("a status change while the microphone is being re-opened does not open it a second time", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    harness.emit({ type: "client_state", state: "active" });
+    harness.emit({ type: "pause_state", paused: true });
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalledOnce());
+
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    harness.emit({ type: "pause_state", paused: false }); // resume: the device starts opening
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    // The connection drops and comes back while the device is still opening: the effect runs again.
+    harness.emit({ type: "client_state", state: "reconnecting" });
+    harness.emit({ type: "client_state", state: "active" });
+
+    expect(startMicCapture).toHaveBeenCalledTimes(1);
+    const capture = { stop: vi.fn() };
+    await act(async () => finish(capture));
+    expect(capture.stop).not.toHaveBeenCalled(); // the one acquisition completed normally and is kept
+  });
+
+  it("the session ending while the microphone is being re-opened closes it and starts nothing", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    harness.emit({ type: "client_state", state: "active" });
+    harness.emit({ type: "pause_state", paused: true });
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalledOnce());
+
+    let finish: (capture: { stop: () => void }) => void = () => {};
+    vi.mocked(startMicCapture).mockReset();
+    vi.mocked(startMicCapture).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    harness.emit({ type: "pause_state", paused: false });
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce());
+    harness.emit({ type: "session_ended", event_id: 1, reason: "idle_timeout", utterances: 0 }); // e.g. server side
+
+    const late = { stop: vi.fn() };
+    await act(async () => finish(late));
+    expect(late.stop).toHaveBeenCalledOnce(); // closed on arrival: nobody is listening any more
+    expect(startMicCapture).toHaveBeenCalledTimes(1); // and nothing tried to open another
+    expect(harness.live.start).toHaveBeenCalledTimes(1); // no new session was started
+  });
 });

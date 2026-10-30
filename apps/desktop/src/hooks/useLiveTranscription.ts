@@ -46,6 +46,7 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
   const supported = Boolean(bridge);
   const captureRef = useRef<MicCapture | null>(null);
   const epochRef = useRef(0);
+  const acquiringRef = useRef<number | null>(null); // epoch of the acquisition in flight, if any
   const startingRef = useRef(false); // synchronous lock: two quick calls to start() must open one microphone
   const ownerRef = useRef(false); // true in the window that started the running session
   const statusRef = useRef(state.status);
@@ -55,6 +56,7 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
 
   const releaseMicrophone = useCallback(() => {
     epochRef.current += 1; // invalidates any acquisition still in flight
+    acquiringRef.current = null; // ...so a fresh one may begin (resume after a pause) without waiting for it
     captureRef.current?.stop();
     captureRef.current = null;
   }, []);
@@ -63,13 +65,18 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
   const acquireMicrophone = useCallback(async (sink: (pcm: Uint8Array) => void): Promise<boolean> => {
     epochRef.current += 1;
     const epoch = epochRef.current;
-    const capture = await startMicCapture(sink);
-    if (epoch !== epochRef.current) {
-      capture.stop(); // stopped, paused or closed while the device was opening
-      return false;
+    acquiringRef.current = epoch;
+    try {
+      const capture = await startMicCapture(sink);
+      if (epoch !== epochRef.current) {
+        capture.stop(); // stopped, paused or closed while the device was opening
+        return false;
+      }
+      captureRef.current = capture;
+      return true;
+    } finally {
+      if (acquiringRef.current === epoch) acquiringRef.current = null;
     }
-    captureRef.current = capture;
-    return true;
   }, []);
 
   const syncFromMainProcess = useCallback(async () => {
@@ -105,7 +112,10 @@ export function useLiveTranscription({ handleCommands = false }: Options = {}) {
     if (!bridge || !ownerRef.current) return;
     if (state.paused) {
       releaseMicrophone(); // also cancels a re-acquisition that was still opening
-    } else if (!captureRef.current && (state.status === "live" || state.status === "reconnecting")) {
+    } else if (
+      // Not while a capture is open or still opening: a status change (live -> reconnecting) re-runs this effect.
+      !captureRef.current && acquiringRef.current === null && (state.status === "live" || state.status === "reconnecting")
+    ) {
       acquireMicrophone((pcm) => bridge.sendAudio(pcm)).catch((cause: unknown) => {
         dispatch({
           type: "error", code: "microphone_lost", fatal: true,

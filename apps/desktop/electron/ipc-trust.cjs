@@ -32,4 +32,32 @@ function createOwnership() {
   };
 }
 
-module.exports = { isTrustedSender, createOwnership };
+/**
+ * Claims the session for `owner` (a webContents) and ends it if that window disappears (closed, crashed, killed).
+ * Nothing would feed the session any more, so it is stopped rather than left open without a microphone.
+ * Returns `dispose()`, which removes the listeners: call it when the session ends, so they never pile up.
+ * @param {{claim: Function, release: Function, isOwner: Function}} ownership
+ * @param {{id: number, once: Function, removeListener: Function}} owner
+ * @param {() => void} onOwnerGone
+ */
+function watchOwner(ownership, owner, onOwnerGone) {
+  ownership.claim(owner.id);
+  const gone = () => {
+    // Only if this window still owns the session: a newer session of another window must not be stopped by it.
+    if (!ownership.isOwner(owner.id)) return;
+    ownership.release();
+    onOwnerGone();
+  };
+  owner.once("destroyed", gone);
+  owner.once("render-process-gone", gone);
+  return function dispose() {
+    try {
+      owner.removeListener("destroyed", gone);
+      owner.removeListener("render-process-gone", gone);
+    } catch {
+      // A destroyed webContents may refuse; its listeners are gone with it.
+    }
+  };
+}
+
+module.exports = { isTrustedSender, createOwnership, watchOwner };

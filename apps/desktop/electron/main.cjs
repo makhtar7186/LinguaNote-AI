@@ -151,6 +151,7 @@ function createBubbleWindow() {
 // -- live dictation -----------------------------------------------------------------------------------------
 
 let liveClient = null;
+let disposeOwnerWatch = () => {};
 const LIVE_IDLE_STATES = ["idle", "ended", "failed"];
 const liveActive = () => Boolean(liveClient && !LIVE_IDLE_STATES.includes(liveClient.state));
 
@@ -161,7 +162,11 @@ function ensureBubbleVisible() {
 
 function onLiveEvent(payload) {
   if (payload.type === "client_state" && payload.state === "connecting") ensureBubbleVisible();
-  if (payload.type === "client_state" && LIVE_IDLE_STATES.includes(payload.state)) ownership.release();
+  if (payload.type === "client_state" && LIVE_IDLE_STATES.includes(payload.state)) {
+    ownership.release();
+    disposeOwnerWatch(); // the session is over: stop watching the window that owned it
+    disposeOwnerWatch = () => {};
+  }
   broadcast("linguanote:live:event", payload);
 }
 
@@ -227,18 +232,9 @@ function registerIpc() {
     });
     try {
       liveClient.start();
-      // The window that starts a session owns the microphone for it. If that window disappears (closed, crashed)
-      // nothing feeds the session any more: end it instead of leaving it open without a microphone.
-      ownership.claim(event.sender.id);
-      const owner = event.sender;
-      const endIfOwnerGone = () => {
-        if (ownership.isOwner(owner.id)) {
-          liveClient?.stop();
-          ownership.release();
-        }
-      };
-      owner.once("destroyed", endIfOwnerGone);
-      owner.once("render-process-gone", endIfOwnerGone);
+      // The window that starts a session owns the microphone for it; if that window disappears the session ends.
+      disposeOwnerWatch();
+      disposeOwnerWatch = ipcTrust.watchOwner(ownership, event.sender, () => liveClient?.stop());
       return { ok: true };
     } catch (error) {
       return { ok: false, code: error.code ?? "unknown", message: error.message };
@@ -398,11 +394,14 @@ async function runSmokeTest() {
 
   // The defaults are registered for real with Electron, then released at once. Another application holding one is a
   // legitimate outcome (reported, not an error); an accelerator Electron rejects as malformed is a real failure.
+  const expectedAccelerators = resolveAccelerators();
+  const reported = [...shortcutReport.registered, ...shortcutReport.failed];
   const malformed = shortcutReport.failed.filter((item) => item.reason !== "already_in_use_or_invalid");
+  const wrongBinding = reported.filter((item) => expectedAccelerators[item.name] !== item.accelerator);
   check(
-    "default global shortcuts are valid accelerators (registered, or reported as taken by another application)",
-    shortcutReport.registered.length + shortcutReport.failed.length === 3 && malformed.length === 0,
-    JSON.stringify({ registered: shortcutReport.registered.map((item) => item.name), taken: shortcutReport.failed.map((item) => item.name), malformed }),
+    "default global shortcuts: each name has its expected accelerator and Electron accepts it (registered, or reported as taken)",
+    reported.length === 3 && new Set(reported.map((item) => item.name)).size === 3 && malformed.length === 0 && wrongBinding.length === 0,
+    JSON.stringify({ registered: shortcutReport.registered.map((item) => item.name), taken: shortcutReport.failed.map((item) => item.name), malformed, wrongBinding }),
   );
   const ok = checks.every((item) => item.ok);
   const report = JSON.stringify({ ok, checks, shortcuts: shortcutReport }, null, 1);

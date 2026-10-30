@@ -1,7 +1,8 @@
+import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-const { isTrustedSender, createOwnership } = createRequire(import.meta.url)("../electron/ipc-trust.cjs");
+const { isTrustedSender, createOwnership, watchOwner } = createRequire(import.meta.url)("../electron/ipc-trust.cjs");
 
 const policy = { isAppUrl: (url: string) => url === "app://index" || url === "app://bubble" };
 const frame = (url: string, processId = 1, routingId = 1) => ({ url, processId, routingId });
@@ -71,5 +72,58 @@ describe("createOwnership", () => {
     ownership.claim(5);
     expect(ownership.isOwner(undefined)).toBe(false);
     expect(ownership.isOwner(null)).toBe(false);
+  });
+});
+
+describe("watchOwner", () => {
+  const windowWithId = (id: number) => Object.assign(new EventEmitter(), { id });
+
+  it("ends the session once, and releases ownership, when the owning window is destroyed", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(3);
+    const onGone = vi.fn();
+    watchOwner(ownership, owner, onGone);
+    expect(ownership.isOwner(3)).toBe(true);
+
+    owner.emit("destroyed");
+    owner.emit("render-process-gone"); // both can fire for one window
+    expect(onGone).toHaveBeenCalledOnce();
+    expect(ownership.isOwner(3)).toBe(false);
+  });
+
+  it("also ends it when the renderer process crashes while the window object survives", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(3);
+    const onGone = vi.fn();
+    watchOwner(ownership, owner, onGone);
+    owner.emit("render-process-gone");
+    expect(onGone).toHaveBeenCalledOnce();
+  });
+
+  it("does not stop a session that another window owns now", () => {
+    const ownership = createOwnership();
+    const first = windowWithId(1);
+    const second = windowWithId(2);
+    const onGone = vi.fn();
+    watchOwner(ownership, first, onGone);
+    watchOwner(ownership, second, onGone); // the second window started the next session
+    first.emit("destroyed"); // the first window going away is now irrelevant
+    expect(onGone).not.toHaveBeenCalled();
+    expect(ownership.isOwner(2)).toBe(true);
+  });
+
+  it("removes its listeners on dispose so they do not pile up session after session", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(4);
+    for (let session = 0; session < 25; session += 1) watchOwner(ownership, owner, vi.fn())();
+    expect(owner.listenerCount("destroyed")).toBe(0);
+    expect(owner.listenerCount("render-process-gone")).toBe(0);
+  });
+
+  it("survives a window that refuses to remove listeners after being destroyed", () => {
+    const owner = Object.assign(new EventEmitter(), { id: 5 });
+    const dispose = watchOwner(createOwnership(), owner, vi.fn());
+    owner.removeListener = () => { throw new Error("Object has been destroyed"); };
+    expect(() => dispose()).not.toThrow();
   });
 });
