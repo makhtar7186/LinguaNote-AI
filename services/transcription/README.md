@@ -18,6 +18,18 @@ FFmpeg doit être installé séparément et accessible dans le `PATH`. Si néces
 
 `faster-whisper` utilise le modèle multilingue `base` par défaut, le charge en CPU INT8, et détecte la langue automatiquement. Les poids du modèle sont téléchargés depuis Hugging Face lors de la première demande explicite de transcription, jamais au démarrage. Pour choisir un autre modèle, définir `LINGUANOTE_WHISPER_MODEL` avant de lancer le service. La machine doit avoir accès à Internet pour ce premier téléchargement. Le service écoute uniquement sur loopback dans la commande ci-dessus.
 
+## Versions des dépendances natives (important)
+
+Sur la machine de test (Windows 11, Python 3.11 Anaconda), des versions récentes plantent le processus **sans message d'erreur Python** (violation d'accès, la connexion HTTP est coupée) :
+
+| Paquet | Plante / échoue | Vérifié OK | Pin dans `pyproject.toml` |
+| --- | --- | --- | --- |
+| `ctranslate2` | 4.7.2, 4.8.4 (au chargement de n'importe quel modèle) | 4.5.0, 4.6.0 | `>=4.4,<4.7` |
+| `onnxruntime` (VAD) | 1.22.1 (échec d'initialisation de DLL), 1.31.1 (plantage à l'import) | 1.20.1 | `>=1.17,<1.21` |
+| `av` | 18.1+ (incompatible avec faster-whisper 1.2.x) | 18.0.0 | `>=11,<18.1` |
+
+Installer avec `pip install -e ".[api,windows-asr,dev]"` applique ces bornes. Si le service s'arrête brutalement pendant une transcription, vérifier d'abord `pip list` contre ce tableau. Relever ces bornes demande de rejouer une transcription réelle (le test unitaire utilise un moteur factice et ne détecte pas ce type de plantage).
+
 ## État du moteur sur Windows
 
 Le moteur Windows actuel cible le français et l’anglais. Whisper ne fournit pas de prise en charge Wolof validée ; les phrases mêlant les langues restent à mesurer et leur transcription ne doit pas être considérée comme fiable. L’adaptateur Omnilingual CTC reste expérimental. Sur l’environnement Windows testé, son installation échoue car `fairseq2n` ne prend pas en charge Windows.

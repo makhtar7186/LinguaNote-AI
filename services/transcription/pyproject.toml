@@ -18,7 +18,11 @@ api = [
 omnilingual = ["omnilingual-asr>=0.1"]
 mcp-server = ["mcp>=1.28,<2"]
 # av 18.1+ rejects the metadata_errors argument that faster-whisper 1.2.x passes to av.open().
-windows-asr = ["faster-whisper>=1.1,<2", "av>=11,<18.1"]
+# ctranslate2 4.7.x and 4.8.x crash with an access violation when loading ANY Whisper model on the
+# Windows 11 / Anaconda Python 3.11 test machine (4.5.0 and 4.6.0 load fine): stay below 4.7 until re-verified.
+# onnxruntime (used by the Silero VAD filter) 1.22.x fails to initialise its DLL and 1.31.x crashes on import
+# on the same machine; 1.20.1 is the verified version.
+windows-asr = ["faster-whisper>=1.1,<2", "av>=11,<18.1", "ctranslate2>=4.4,<4.7", "onnxruntime>=1.17,<1.21"]
 dev = ["pytest>=8", "httpx2>=2", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
