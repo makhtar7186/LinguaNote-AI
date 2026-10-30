@@ -6,6 +6,7 @@ const launcher = require("./backend-launcher.cjs");
 const { createUrlPolicy } = require("./app-urls.cjs");
 const { createBubbleController } = require("./bubble-controller.cjs");
 const { createArmGate } = require("./capture-gate.cjs");
+const { createCapturePlan } = require("./capture-plan.cjs");
 const ipcTrust = require("./ipc-trust.cjs");
 const { LiveClient } = require("./live-client.cjs");
 const { createPositionStore } = require("./position-store.cjs");
@@ -37,6 +38,8 @@ let backendState = { status: "starting", message: "Démarrage du service local�
 
 const ownership = ipcTrust.createOwnership();
 const captureGate = createArmGate();
+// The source a window declared before opening any device (see capture-plan.cjs).
+const capturePlan = createCapturePlan();
 // What the session listens to. Chosen explicitly by the user; never changed behind their back.
 const CAPTURE_SOURCES = ["microphone", "system", "both"];
 let liveSource = null;
@@ -162,7 +165,9 @@ const liveActive = () => Boolean(liveClient && !LIVE_IDLE_STATES.includes(liveCl
 
 /** Dictation must never run unseen: starting it always brings the bubble (the recording indicator) up. */
 function ensureBubbleVisible() {
-  if (!SMOKE && bubble.window && !bubble.isVisible()) bubble.setVisible(true);
+  if (SMOKE) return;
+  if (!bubble.window) createBubbleWindow(); // it was closed: bring it back before anything records
+  else if (!bubble.isVisible()) bubble.setVisible(true);
 }
 
 function onLiveEvent(payload) {
@@ -227,6 +232,20 @@ function registerIpc() {
     return backendNotReady() ?? api.transcribe(config, payload);
   });
 
+  // Step 1 of a session: the window declares the source it is about to open. The recording indicator (the bubble) is
+  // made visible NOW, before any microphone or loopback is opened, and system audio can only be armed after this.
+  ipcMain.handle("linguanote:live:prepare", async (event, options) => {
+    assertTrustedSender(event);
+    const notReady = backendNotReady();
+    if (notReady) return notReady;
+    if (liveActive()) return { ok: false, code: "already_running", message: "Une session en direct est déjà en cours." };
+    if (!capturePlan.declare(event.sender.id, options?.source ?? "microphone")) {
+      return { ok: false, code: "invalid_source", message: "Source audio inconnue." };
+    }
+    ensureBubbleVisible();
+    return { ok: true };
+  });
+
   ipcMain.handle("linguanote:live:start", async (event, options) => {
     assertTrustedSender(event);
     const notReady = backendNotReady();
@@ -234,6 +253,7 @@ function registerIpc() {
     // An unknown source is an error, never a silent fallback to the microphone.
     const requested = options?.source ?? "microphone";
     if (!CAPTURE_SOURCES.includes(requested)) {
+      capturePlan.clear();
       return { ok: false, code: "invalid_source", message: "Source audio inconnue." };
     }
     if (liveActive()) return { ok: false, code: "already_running", message: "Une session en direct est déjà en cours." };
@@ -250,6 +270,7 @@ function registerIpc() {
       onOwnerGone: () => liveClient?.stop(),
       onWatch: (dispose) => { disposeOwnerWatch = dispose; },
     });
+    capturePlan.clear(); // the session is now the authority for its own source
     if (!started.ok) {
       disposeOwnerWatch = () => {};
       return { ok: false, code: started.error.code ?? "unknown", message: started.error.message };
@@ -297,6 +318,13 @@ function registerIpc() {
   // The renderer announces it is about to ask for system audio. Without this, the display handler denies.
   ipcMain.handle("linguanote:capture:armSystemAudio", async (event) => {
     assertTrustedSender(event);
+    // Only after the window declared a plan that uses the computer sound, or for the running session that does. A
+    // script cannot arm the gate on its own, so the bubble is guaranteed to be up whenever system audio is captured.
+    const allowed = capturePlan.allowsSystemAudio(event.sender.id, { ownerId: ownership.current, source: liveSource });
+    if (!allowed) {
+      return { ok: false, code: "not_declared", message: "Choisissez d'abord le son de l'ordinateur comme source." };
+    }
+    ensureBubbleVisible();
     captureGate.arm(event.sender.id);
     return { ok: true };
   });
@@ -359,7 +387,7 @@ async function runSmokeTest() {
     check("bubble page rendered with the strict CSP", bubbleProbe.hasRoot && bubbleProbe.marker && /default-src 'self'/.test(bubbleProbe.csp ?? "") && !/unsafe-inline/.test(bubbleProbe.csp ?? ""));
     check("renderers have no Node.js (require/process undefined)", [mainProbe, bubbleProbe].every((p) => p.require === "undefined" && p.process === "undefined"));
     check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
-    check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
+    check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "prepare", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
     const frameProbe = `new Promise((resolve) => {
       const violations = [];
@@ -387,7 +415,24 @@ async function runSmokeTest() {
     const unarmed = await run(mainWindow.webContents, askForSystemAudio);
     check("system audio is denied when nothing armed it", unarmed.granted === false, JSON.stringify(unarmed));
 
-    await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    // A script cannot arm the gate on its own: the window must first declare a plan that uses the computer sound.
+    const armBare = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("arming without declaring the source is refused", armBare.ok === false && armBare.code === "not_declared", JSON.stringify(armBare));
+
+    await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'microphone' })");
+    const armForMicrophone = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("arming after declaring the microphone only is refused", armForMicrophone.ok === false, JSON.stringify(armForMicrophone));
+
+    const unknown = await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'cloud' })");
+    check("declaring an unknown source is refused, not defaulted", unknown.ok === false && unknown.code === "invalid_source", JSON.stringify(unknown));
+    const stillRefused = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("a refused declaration leaves nothing armable", stillRefused.ok === false);
+
+    const declared = await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'system' })");
+    check("declaring the computer sound is accepted", declared.ok === true, JSON.stringify(declared));
+    const armed1 = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("arming after declaring the computer sound is accepted", armed1.ok === true, JSON.stringify(armed1));
+
     const otherWindow = await run(bubble.webContents, askForSystemAudio);
     check("an arm made by one window cannot be used by the other", otherWindow.granted === false, JSON.stringify(otherWindow));
 

@@ -92,6 +92,8 @@ export interface LiveState {
 }
 
 export interface LiveBridge {
+  /** First step: declare the source, so the recording indicator is shown before any device opens. */
+  prepare: (options?: { source?: AudioSourceKind }) => Promise<unknown>;
   /** Opens a session; resolves to the same `{ok}` envelope as the other bridge calls. */
   start: (options?: { source?: AudioSourceKind }) => Promise<unknown>;
   /** Fire and forget: 16 kHz mono PCM s16le. */

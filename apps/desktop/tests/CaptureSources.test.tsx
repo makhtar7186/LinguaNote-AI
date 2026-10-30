@@ -19,6 +19,7 @@ function install({ withCapture = true }: { withCapture?: boolean } = {}) {
   let listener: (event: unknown) => void = () => {};
   let commandListener: (command: unknown) => void = () => {};
   const live = {
+    prepare: vi.fn().mockResolvedValue({ ok: true }),
     start: vi.fn().mockResolvedValue({ ok: true }), stop: vi.fn().mockResolvedValue({ ok: true }),
     pause: vi.fn().mockResolvedValue({ ok: true }), resume: vi.fn().mockResolvedValue({ ok: true }),
     status: vi.fn().mockResolvedValue({ ok: true, state: "idle", paused: false }), sendAudio: vi.fn(),
@@ -281,5 +282,62 @@ describe("source choice in the bubble", () => {
     render(<BubbleApp />);
     env.command({ action: "toggle_live" }); // nothing chosen: the default, which is the microphone
     await waitFor(() => expect(env.live.start).toHaveBeenCalledWith({ source: "microphone" }));
+  });
+});
+
+describe("declaring the source before opening any device", () => {
+  it("declares the source first, then opens the devices, then starts the session", async () => {
+    const env = install();
+    const order: string[] = [];
+    env.live.prepare.mockImplementation(async () => { order.push("prepare"); return { ok: true }; });
+    vi.mocked(startMicCapture).mockImplementation(async () => { order.push("devices"); return { stop: env.micStop }; });
+    env.live.start.mockImplementation(async () => { order.push("start"); return { ok: true }; });
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.change(sourceSelect(), { target: { value: "system" } });
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(env.live.start).toHaveBeenCalled());
+    expect(order).toEqual(["prepare", "devices", "start"]); // the indicator is up before any device opens
+    expect(env.live.prepare).toHaveBeenCalledWith({ source: "system" });
+  });
+
+  it("opens no device and starts no session when the declaration is refused", async () => {
+    const env = install();
+    env.live.prepare.mockResolvedValue({ ok: false, code: "invalid_source", message: "Source audio inconnue." });
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    expect((await screen.findAllByRole("alert"))[0].textContent).toBe("Source audio inconnue.");
+    expect(startMicCapture).not.toHaveBeenCalled();
+    expect(env.live.start).not.toHaveBeenCalled();
+  });
+
+  it("stopping while the declaration is in flight opens nothing", async () => {
+    const env = install();
+    let answer: (value: unknown) => void = () => {};
+    env.live.prepare.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(env.live.prepare).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Arrêter"));
+    await waitFor(() => expect(env.live.stop).toHaveBeenCalled());
+
+    await act(async () => answer({ ok: true }));
+    expect(startMicCapture).not.toHaveBeenCalled(); // the user stopped: no device is opened afterwards
+    expect(env.live.start).not.toHaveBeenCalled();
+  });
+
+  it("mirrors a session another window already runs instead of showing an error", async () => {
+    const env = install();
+    env.live.prepare.mockResolvedValue({ ok: false, code: "already_running", message: "déjà en cours" });
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    // Another window starts a session just after this one rendered: the declaration is refused with already_running.
+    env.live.status.mockResolvedValue({ ok: true, state: "active", paused: false, source: "both" });
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(screen.getByTestId("active-source").textContent).toContain("Microphone + son de l’ordinateur"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(startMicCapture).not.toHaveBeenCalled();
   });
 });

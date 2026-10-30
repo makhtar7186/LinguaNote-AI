@@ -14,7 +14,7 @@ interface Harness {
   emit: (event: unknown) => void;
   command: (command: unknown) => void;
   live: {
-    start: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>;
+    prepare: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>;
     pause: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn>;
     onEvent: ReturnType<typeof vi.fn>;
   };
@@ -32,6 +32,7 @@ function install(
   const live = {
     start: overrides.start ?? vi.fn().mockResolvedValue({ ok: true }),
     sendAudio: vi.fn(),
+    prepare: vi.fn().mockResolvedValue({ ok: true }),
     stop: vi.fn().mockResolvedValue({ ok: true }),
     pause: vi.fn().mockResolvedValue({ ok: true }),
     resume: vi.fn().mockResolvedValue({ ok: true }),

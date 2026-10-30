@@ -45,7 +45,7 @@ describe("bubbleMode", () => {
 interface Harness {
   emit: (event: unknown) => void;
   command: (command: unknown) => void;
-  live: Record<"start" | "stop" | "pause" | "resume" | "status" | "sendAudio" | "onEvent", ReturnType<typeof vi.fn>>;
+  live: Record<"prepare" | "start" | "stop" | "pause" | "resume" | "status" | "sendAudio" | "onEvent", ReturnType<typeof vi.fn>>;
   bubble: Record<"setExpanded" | "setVisible", ReturnType<typeof vi.fn>>;
 }
 
@@ -53,6 +53,7 @@ function install(report: unknown = { registered: [], failed: [] }): Harness {
   let listener: (event: unknown) => void = () => {};
   let commandListener: (command: unknown) => void = () => {};
   const live = {
+    prepare: vi.fn().mockResolvedValue({ ok: true }),
     start: vi.fn().mockResolvedValue({ ok: true }), stop: vi.fn().mockResolvedValue({ ok: true }),
     pause: vi.fn().mockResolvedValue({ ok: true }), resume: vi.fn().mockResolvedValue({ ok: true }),
     status: vi.fn().mockResolvedValue({ ok: true, state: "idle", paused: false }), sendAudio: vi.fn(),
@@ -257,7 +258,8 @@ describe("shortcut commands", () => {
       harness.command({ action: "toggle_live" });
       harness.command({ action: "toggle_live" });
     });
-    expect(startMicCapture).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledTimes(1));
+    expect(harness.live.prepare).toHaveBeenCalledTimes(1); // the lock refused the second request before anything happened
     const capture = { stop: vi.fn() };
     await act(async () => finish(capture));
     await waitFor(() => expect(harness.live.start).toHaveBeenCalledOnce());

@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("linguaNote", {
   // Live dictation. The main process owns the connection and the secret; the renderer only hands over
   // audio and receives events (every window receives them: the bubble and the main window mirror each other).
   live: {
+    // Declare the source before opening any device: the bubble is shown first, and system audio needs this step.
+    prepare: (options) => ipcRenderer.invoke("linguanote:live:prepare", { source: options?.source }),
     // options.source: "microphone" | "system" | "both" (validated by the main process; unknown values are refused)
     start: (options) => ipcRenderer.invoke("linguanote:live:start", { source: options?.source }),
     sendAudio: (pcm) => {

@@ -191,9 +191,25 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
     startOptionsRef.current = { source: "microphone", ...defaultStartRef.current, ...options };
     dispatch({ type: "reset" });
     ownerRef.current = true;
+    const epochBefore = epochRef.current;
     try {
-      // Sources first: if permission is refused, no session is opened for nothing. Frames captured while the
-      // session is being opened are held back (the main process drops audio that arrives before it exists).
+      // Step 1: declare the source. The main process shows the recording indicator before any device opens, and
+      // refuses an unknown source instead of guessing one.
+      const declared = failureOf(await bridge.prepare({ source: startOptionsRef.current.source }));
+      if (declared) {
+        ownerRef.current = false;
+        if (declared.code === "already_running") {
+          await syncFromMainProcess(); // another window runs the session: just mirror it
+          return;
+        }
+        throw new Error(declared.message);
+      }
+      if (epochRef.current !== epochBefore) {
+        ownerRef.current = false; // stopped while declaring: no device was opened, nothing to undo
+        return;
+      }
+      // Step 2: the sources. If a permission is refused, no session is opened for nothing. Frames captured while
+      // the session is being opened are held back (the main process drops audio that arrives before it exists).
       const held: Uint8Array[] = [];
       let sessionOpen = false;
       const opened = await acquireMicrophone((pcm) => {
