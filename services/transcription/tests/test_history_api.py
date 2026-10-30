@@ -357,3 +357,32 @@ def test_an_unknown_source_in_the_opening_message_is_refused(client):
     with client.websocket_connect(LIVE) as ws:
         ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "source": "cloud"})
         assert ws.receive_json()["code"] == "invalid_message"
+
+
+def test_turning_the_history_off_during_a_live_session_stops_the_recording(client):
+    enable(client)
+    with client.websocket_connect(LIVE) as ws:
+        ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "source": "microphone"})
+        ws.receive_json()
+        seq = 1
+        for piece in chunks(tone(1.0) + silence(1.0)):
+            ws.send_bytes(frame(seq, piece))
+            seq += 1
+        while ws.receive_json()["type"] != "final":
+            pass
+        client.put("/api/v1/history/settings", json={"enabled": False, "retention_days": 30})
+        for piece in chunks(tone(1.0) + silence(1.0)):
+            ws.send_bytes(frame(seq, piece))
+            seq += 1
+        kinds = []
+        while True:
+            message = ws.receive_json()
+            kinds.append((message["type"], message.get("code")))
+            if message["type"] == "final":
+                break
+        ws.send_json({"type": "stop"})
+        while ws.receive_json()["type"] != "session_ended":
+            pass
+    assert ("error", "history_write_failed") not in kinds  # switching off is not a storage failure
+    stored = client.app.state.history.list_sessions()["items"]
+    assert len(stored) == 1 and stored[0]["segment_count"] == 1  # the second utterance was not saved

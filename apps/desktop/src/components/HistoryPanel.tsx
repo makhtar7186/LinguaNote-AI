@@ -37,6 +37,7 @@ export function HistoryPanel() {
   const [info, setInfo] = useState("");
   const [confirmingAll, setConfirmingAll] = useState(false);
   const latestRequest = useRef(0);
+  const latestDetail = useRef(0);
 
   const refresh = useCallback(async (search: string) => {
     const request = ++latestRequest.current;
@@ -80,7 +81,9 @@ export function HistoryPanel() {
   });
 
   const openSession = (id: string) => run(async () => {
+    const request = ++latestDetail.current;
     const detail = await getSession(id);
+    if (request !== latestDetail.current) return; // the user has clicked another session since
     setOpen(detail);
     setTitle(detail.title ?? "");
   });

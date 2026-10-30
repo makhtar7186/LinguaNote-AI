@@ -40,7 +40,8 @@ export function InsertionControl({ liveActive }: { liveActive: boolean }) {
   async function arm() {
     setRefusal("");
     const answer = await bridge?.arm();
-    if (isRec(answer) && answer.ok === false) setRefusal(typeof answer.message === "string" ? answer.message : "Impossible d’activer l’insertion.");
+    // Cancelling the system confirmation is a choice, not an error.
+    if (isRec(answer) && answer.ok === false && answer.code !== "declined") setRefusal(typeof answer.message === "string" ? answer.message : "Impossible d’activer l’insertion.");
   }
 
   const active = status.state !== "off";

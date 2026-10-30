@@ -86,6 +86,22 @@ describe("HistoryPanel", () => {
     expect(screen.queryByText("résultat périmé")).toBeNull();
   });
 
+  it("shows the session clicked last even if an earlier one answers later", async () => {
+    bridge.list.mockReturnValue(ok({ items: [summary({ id: "a", preview: "première" }), summary({ id: "b", preview: "seconde" })], total: 2 }));
+    let releaseA: (value: unknown) => void = () => {};
+    bridge.get.mockImplementation((id: string) => id === "a"
+      ? new Promise((resolve) => { releaseA = resolve; })
+      : ok({ ...summary({ id: "b" }), segments: [{ text: "texte de B", start_seconds: null, end_seconds: null, language: null, language_probability: null }] }));
+    render(<HistoryPanel />);
+    fireEvent.click(await screen.findByText("première"));
+    fireEvent.click(await screen.findByText("seconde"));
+    await screen.findByText("texte de B");
+    releaseA(ok({ ...summary({ id: "a" }), segments: [{ text: "texte de A", start_seconds: null, end_seconds: null, language: null, language_probability: null }] }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByText("texte de A")).toBeNull();
+    expect(screen.getByText("texte de B")).toBeTruthy();
+  });
+
   it("opens a session, copies it, renames it and exports it", async () => {
     const writeText = vi.fn(() => Promise.resolve());
     Object.assign(navigator, { clipboard: { writeText } });

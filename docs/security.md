@@ -1,13 +1,13 @@
 # Sécurité et confidentialité
 
-État au jalon 1 (fichier uniquement). Ce document décrit ce qui est réellement en place et ce qui reste à faire.
+Ce document décrit ce qui est réellement en place et ce qui reste à faire (état : phase 5).
 
 ## Données et traitement
 
 - Audio et texte sont traités localement. Aucune API cloud n'est utilisée, aucune télémétrie n'existe.
 - Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première transcription. Hors-ligne, la transcription échoue avec `model_unavailable`. Il n'y a pas encore de confirmation explicite avant ce téléchargement (limite connue).
 - Les fichiers envoyés sont écrits dans un dossier temporaire (`tempfile.mkdtemp`) supprimé à la fin de la requête, succès ou erreur. Si une inférence dépasse son délai et continue de lire le fichier, la suppression est différée jusqu'à la fin de cette inférence. Une fermeture forcée du processus peut laisser un dossier `linguanote-*` dans le répertoire temporaire de l'utilisateur. Le nom du client n'est jamais utilisé comme chemin.
-- Rien n'est conservé : pas d'historique ni de base de données à ce stade. La rétention et la suppression seront à définir avec SQLite (phase 5).
+- Par défaut rien n'est conservé. Un historique local existe, mais seulement si l'utilisateur l'active (voir « Historique des transcriptions » plus bas).
 - L'interface n'émet plus de requête vers Google Fonts : l'import de polices distantes a été supprimé (polices système de repli), pour tenir la promesse « aucun accès réseau » hors téléchargement du modèle.
 - Les journaux (`data/logs/linguanote.log`, rotation 5 Mio x 3) contiennent des métadonnées (extension, taille, durée audio, moteur, durée de traitement). La langue estimée et la longueur du texte ne sont plus journalisées. Pas d'audio ni de texte transcrit. Pas de purge automatique au-delà de la rotation.
 
@@ -46,15 +46,16 @@ L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateu
 - **Suppression** : par session ou totale (confirmation explicite côté interface *et* côté service). SQLite est ouvert avec `secure_delete`, et le fichier est compacté (`VACUUM`, journal tronqué) après une suppression : les données supprimées ne restent pas dans le fichier. Éprouvé en relisant le fichier brut (voir `tests/test_history.py`).
 - **Limite assumée : pas de chiffrement propre à l'application.** Le fichier est en clair ; il n'est protégé que par les droits du compte Windows (et le chiffrement du disque, s'il est activé). C'est dit dans l'interface. Un chiffrement avec une clé du coffre Windows est possible plus tard.
 - **Requêtes de recherche** : le texte saisi n'est jamais interprété comme du SQL ni comme la syntaxe FTS (chaque mot est mis entre guillemets) ; les extraits surlignés sont rendus comme du texte, jamais comme du HTML.
+- **Désactivation en cours de session** : désactiver l'historique pendant un direct arrête l'écriture dès l'énoncé suivant (ce qui était déjà enregistré reste jusqu'à suppression par l'utilisateur).
 - **Pannes** : un échec d'écriture est signalé une fois (`history_write_failed`) sans interrompre le direct ni perdre le texte affiché ; une session interrompue par un arrêt brutal est marquée `interrupted`.
 
 ## Insertion de texte dans une autre application (phase 5, Windows)
 
 L'insertion écrit dans l'application d'un tiers : elle est donc strictement encadrée.
 
-- **Opt-in, visible, par session** : il faut un direct en cours, un clic sur « Insérer le texte dans une autre application » et un décompte de 3 s pendant lequel l'utilisateur clique dans la cible. L'état (cible, texte en attente, problème) est toujours affiché ; elle s'arrête avec la session une fois le texte en attente inséré.
-- **Cible verrouillée** : la fenêtre au premier plan à la fin du décompte. Le script de collage vérifie, **au moment même** de la frappe, que cette fenêtre est toujours au premier plan, sinon il ne touche à aucune touche. Si l'utilisateur change de fenêtre, l'insertion se met en pause (le texte attend, rien n'est frappé ailleurs) et reprend seule au retour. Les fenêtres de LinguaNote ne peuvent jamais être la cible.
-- **Presse-papiers emprunté, pas écrasé** : le contenu texte/HTML/RTF est enregistré, remplacé le temps du collage (Ctrl+V), puis remis. S'il contient autre chose (image, fichiers, bitmap), **rien n'est écrasé** et l'insertion attend. Si l'utilisateur copie autre chose entre-temps, son nouveau contenu est laissé tel quel. Les formats internes d'applications (par exemple l'objet OLE d'Excel) sont perdus à la restauration : limite assumée.
+- **Opt-in, visible, par session** : il faut un direct en cours, un clic sur « Insérer le texte dans une autre application », une **confirmation par une boîte de dialogue système** (le processus principal ne peut pas distinguer un vrai clic d'un script qui appellerait le pont ; un renderer compromis ne peut pas cliquer sur cette boîte), puis un décompte de 3 s pendant lequel l'utilisateur clique dans la cible. L'état (cible, texte en attente, problème) est toujours affiché ; elle s'arrête avec la session une fois le texte en attente inséré.
+- **Cible verrouillée** : la fenêtre au premier plan à la fin du décompte. Le script de collage vérifie, juste avant la frappe et dans le même processus, que cette fenêtre est toujours au premier plan, sinon il ne touche à aucune touche. La vérification et l'envoi de Ctrl+V ne sont **pas atomiques** (Windows n'offre pas d'envoi de touches lié à une fenêtre) : si l'utilisateur change de fenêtre dans les quelques millisecondes qui les séparent, le texte peut être collé dans la nouvelle fenêtre. Risque résiduel faible, non éliminé. Si l'utilisateur change de fenêtre, l'insertion se met en pause (le texte attend, rien n'est frappé ailleurs) et reprend seule au retour. Les fenêtres de LinguaNote ne peuvent jamais être la cible.
+- **Presse-papiers emprunté, pas écrasé** : le contenu texte/HTML/RTF est enregistré, remplacé le temps du collage (Ctrl+V), puis remis. S'il contient autre chose (image, fichiers, bitmap), **rien n'est écrasé** et l'insertion attend. Si l'utilisateur copie autre chose entre-temps, son nouveau contenu est laissé tel quel, sauf s'il copie dans l'intervalle de quelques millisecondes entre la comparaison et la restauration (course résiduelle, non éliminée). Les formats internes d'applications (par exemple l'objet OLE d'Excel) sont perdus à la restauration : limite assumée.
 - **Aucun texte dans une ligne de commande** : le script PowerShell ne reçoit que l'identifiant de la fenêtre attendue ; le texte transite uniquement par le presse-papiers.
 - **Limites** : une application lancée en administrateur ignore les touches envoyées par un processus normal (UIPI) sans qu'on puisse le détecter ; chaque collage coûte environ une demi-seconde (démarrage de PowerShell) ; un utilisateur qui maintient une touche modificatrice pendant le collage peut le perturber ; pas de prise en charge de macOS ni de Linux.
 

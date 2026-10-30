@@ -273,6 +273,10 @@ class SessionRecorder:
 
     def segment(self, **fields) -> bool:
         try:
+            # Turning the history off takes effect at once, even in the middle of a session: from then on nothing
+            # more is written (what was already saved stays until the user deletes it).
+            if not self.repository.get_settings().enabled:
+                return True
             self.repository.append_segment(self.session_id, position=self._position, **fields)
             self._position += 1
             return True
