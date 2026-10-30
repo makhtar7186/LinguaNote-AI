@@ -82,7 +82,13 @@ export function HistoryPanel() {
 
   const openSession = (id: string) => run(async () => {
     const request = ++latestDetail.current;
-    const detail = await getSession(id);
+    let detail: HistorySessionDetail;
+    try {
+      detail = await getSession(id);
+    } catch (failure) {
+      if (request === latestDetail.current) throw failure; // an outdated request's error is no longer relevant
+      return;
+    }
     if (request !== latestDetail.current) return; // the user has clicked another session since
     setOpen(detail);
     setTitle(detail.title ?? "");

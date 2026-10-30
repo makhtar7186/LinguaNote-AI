@@ -41,6 +41,7 @@ let shortcutReport = { registered: [], failed: [] };
 let backendState = { status: "starting", message: "Démarrage du service local…" };
 
 const ownership = ipcTrust.createOwnership();
+let armDialogOpen = false; // one insertion confirmation at a time
 // Insertion into other applications is implemented for Windows only (docs/security.md); elsewhere it reports "unsupported".
 const INSERTION_SUPPORTED = process.platform === "win32";
 const inserter = INSERTION_SUPPORTED
@@ -256,7 +257,9 @@ function registerIpc() {
     if (!liveActive()) return { ok: false, code: "no_live_session", message: "Démarrez d’abord une dictée en direct." };
     // A system dialog the page cannot click: the main process cannot tell a real click from a script calling the
     // bridge, so typing into other applications needs this explicit confirmation (skipped only by the smoke test).
+    if (armDialogOpen) return { ok: false, code: "declined", message: "Une confirmation est déjà affichée." };
     if (!SMOKE) {
+      armDialogOpen = true;
       const choice = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender) ?? undefined, {
         type: "question",
         buttons: ["Activer l’insertion", "Annuler"],
@@ -265,7 +268,7 @@ function registerIpc() {
         title: "Insérer dans une autre application",
         message: "Coller le texte dicté dans une autre application ?",
         detail: "Après ce message, vous aurez 3 secondes pour cliquer dans la fenêtre cible. Le texte y sera collé au fur et à mesure (Ctrl+V). Vous pourrez arrêter à tout moment.",
-      });
+      }).finally(() => { armDialogOpen = false; });
       if (choice.response !== 0) return { ok: false, code: "declined", message: "Insertion annulée." };
       if (!liveActive()) return { ok: false, code: "no_live_session", message: "La dictée en direct s’est arrêtée." };
     }
