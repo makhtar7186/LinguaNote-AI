@@ -59,9 +59,20 @@ Limites connues : la bulle n'insère pas encore le texte dans l'application acti
 
 Limites connues : le son capturé est celui de tout le système, notifications comprises, sans filtre par application ; pas de séparation des locuteurs (diarisation, phase 6), donc une réunion est transcrite en un seul flux ; le mélange est une simple somme avec marge de volume.
 
-## Phase 5 - Productivité (à faire)
+## Phase 5 - Productivité (implémentée sous Windows ; insertion éprouvée dans une fenêtre de test)
 
-SQLite, historique, recherche, import/export, dictée et insertion de texte.
+| Élément | État |
+| --- | --- |
+| Politique de conservation et de suppression, définie **avant** la base | fait ([security.md](security.md)) : désactivé par défaut, durée au choix, suppression réelle |
+| Stockage SQLite (WAL, `secure_delete`, migrations par `user_version`, refuse un schéma plus récent) | fait ; suppression vérifiée en relisant les octets bruts du fichier et de son journal |
+| Recherche plein texte (FTS5, sans accents ni casse, entrées hostiles neutralisées) | fait |
+| Enregistrement du direct énoncé par énoncé ; import de fichier enregistré si l'historique est activé | fait ; échec de stockage signalé sans perdre le texte |
+| Export `txt`, `md`, `srt`, `vtt`, `json` | fait ; `srt`/`vtt` refusés sans horodatage (jamais inventé) |
+| Interface d'historique (recherche, ouverture, copie, renommage, export, suppression, tout supprimer avec confirmation) | fait, 12 tests de composant ; **l'aspect à l'écran n'a pas été regardé** |
+| Insertion dans l'application active (cible verrouillée, presse-papiers emprunté puis remis) | fait ; **éprouvé une fois pour de vrai** dans une fenêtre de test (`LINGUANOTE_SMOKE_INSERTION=1 npm run smoke`) : phrases accentuées arrivées dans l'ordre, presse-papiers de l'utilisateur remis |
+| **Non vérifié** | l'insertion dans de vraies applications (Word, navigateurs, éditeurs, champs protégés, applications lancées en administrateur) ; le comportement du presse-papiers avec des contenus riches venant d'Office ; des historiques volumineux (milliers de sessions) ; la lecture de l'historique par plusieurs fenêtres en même temps ; macOS et Linux |
+
+Limites connues : historique **non chiffré** par l'application (protégé seulement par le compte Windows) ; pas de dictée « raccourci maintenu » (appuyer-parler-relâcher) ; pas d'import de lot ni de recherche par langue ou par date ; la pagination de la liste s'arrête à 200 résultats (affiner la recherche) ; l'insertion coûte environ une demi-seconde par collage (démarrage de PowerShell) ; une application lancée en administrateur ignore le collage.
 
 ## Phase 6 - Intelligence avancée (à faire)
 

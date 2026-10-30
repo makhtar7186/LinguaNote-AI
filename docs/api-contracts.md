@@ -51,6 +51,24 @@ Réponse `200` :
 - `timing_available` n'est vrai que si le moteur fournit réellement des segments.
 - Un audio sans parole détectée renvoie `text: ""` et `segments: []`.
 - Le texte n'est jamais traduit ni corrigé.
+- `saved_session_id` (chaîne ou `null`) : identifiant de la session créée dans l'historique, **uniquement si l'historique est activé** et que l'enregistrement a réussi. Un échec de stockage ne fait jamais échouer la transcription (le champ vaut alors `null`). Le nom du fichier envoyé n'est jamais conservé.
+
+## Historique : `/api/v1/history`
+
+Désactivé par défaut (voir [security.md](security.md)). Toutes les routes exigent le jeton. Rien n'est écrit sur le disque tant que l'historique est désactivé : même le fichier de base n'est pas créé.
+
+| Route | Rôle |
+| --- | --- |
+| `GET /settings` | `{ "enabled": false, "retention_days": 30 }` |
+| `PUT /settings` | Corps `{ "enabled": bool, "retention_days": 7 \| 30 \| 90 \| 365 \| null }` (`null` = sans limite). Toute autre durée : `422 invalid_retention`. Les sessions devenues trop anciennes sont supprimées **immédiatement**. |
+| `GET /sessions?query=&limit=&offset=` | `{ "items": [...], "total": N }`, plus récentes d'abord. `limit` 1 à 200 (50 par défaut), `query` 200 caractères au plus. La recherche est insensible à la casse et aux accents (« jerejef » trouve « Jërëjëf »), le dernier mot est un préfixe ; `snippet` entoure les mots trouvés des caractères de contrôle `\x02` (début) et `\x03` (fin), à afficher comme du texte et jamais comme du HTML. |
+| `GET /sessions/{id}` | Session avec ses `segments` (`position`, `start_seconds`, `end_seconds`, `text`, `language`, `language_probability`). Les temps sont `null` quand le moteur n'en fournit pas. |
+| `PATCH /sessions/{id}` | Corps `{ "title": "..." }` (non vide, 200 caractères au plus ; `422 invalid_title` sinon). |
+| `DELETE /sessions/{id}` | `204`. Suppression réelle : les données sont écrasées dans le fichier (`secure_delete`) puis le fichier est compacté. |
+| `DELETE /sessions?confirm=all` | Supprime tout (`{ "deleted": N }`). Sans `confirm=all` : `400 confirmation_required`. |
+| `GET /sessions/{id}/export?format=` | `txt` (défaut), `md`, `srt`, `vtt`, `json`. `Content-Disposition: attachment; filename*=UTF-8''…` avec un nom assaini. `srt` et `vtt` sont **refusés** (`422 export_not_possible`) pour une session sans horodatage : les temps ne sont jamais inventés. Format inconnu : `422 unsupported_format`. |
+
+`id` : `^[A-Za-z0-9_-]{1,64}$`, sinon `404`/`422`. Session inconnue : `404 session_not_found`. Une session `kind` = `live` ou `file`, `source` = `microphone`, `system`, `both` ou `null`, `status` = `recording`, `complete` ou `interrupted` (le service s'est arrêté avant la fin ; le texte peut être incomplet). Le direct enregistre chaque énoncé **à sa finalisation** ; si l'écriture échoue, un seul événement non fatal `history_write_failed` est émis et le direct continue.
 
 ## Erreurs
 
@@ -86,6 +104,12 @@ Le renderer revalide la forme des réponses (`src/services/transcriptionClient.t
 
 `window.linguaNote.live` expose `start()` (enveloppe `{ok}` comme ci-dessus), `sendAudio(pcm)` (sans réponse ; PCM s16le 16 kHz mono, nombre d'octets pair, rejeté sinon), `stop()` et `onEvent(listener)` (renvoie la fonction de désabonnement). Le processus principal possède la connexion WebSocket, envoie le jeton, numérote et conserve les trames non acquittées (30 s au maximum, avertissement `audio_buffer_overflow` au-delà), reprend la session après une coupure avec temporisation croissante (250 ms à 4 s, dans la fenêtre de 30 s du serveur), **déduplique** les événements par `event_id` avant de les transmettre, et ajoute des événements locaux : `client_state` (`connecting`, `active`, `reconnecting`, `stopping`, `ended`, `failed`) et des `error` locaux (`service_unavailable`, `session_lost`, `audio_lost`, `audio_buffer_overflow`). `live.prepare({source})` est la **première étape** d'une session : elle déclare la source, affiche la bulle avant l'ouverture de tout périphérique et refuse une source inconnue (`invalid_source`) ; `capture.armSystemAudio()` n'est accepté qu'après une déclaration utilisant le son de l'ordinateur, ou pour la session en cours qui l'utilise (`not_declared` sinon). `live.start({source})` prend la source écoutée (`microphone` par défaut, `system`, `both`) ; une valeur inconnue est **refusée** (`invalid_source`), jamais remplacée par le micro ; le processus principal diffuse l'événement `capture_source` à toutes les fenêtres et `live.status()` renvoie `source`. `window.linguaNote.capture.armSystemAudio()` doit précéder toute demande de son de l'ordinateur (`getDisplayMedia`) sinon elle est refusée ; l'armement est à usage unique, lié à la fenêtre et expire en 10 s ; `capture.disarm()` l'annule. `live.pause()`, `live.resume()` et `live.status()` complètent l'API : la pause ignore l'audio du micro (sans le mettre en tampon) après avoir envoyé 0,9 s de silence qui clôt la phrase en cours, la session et ses accusés continuent ; elle émet `pause_state`. `live.status()` permet à une fenêtre ouverte en cours de session de se synchroniser. Les événements sont **diffusés à toutes les fenêtres**. `window.linguaNote.bubble` expose `setExpanded`, `setVisible` (refusé avec `recording_active` pendant un enregistrement), `getState` et `onCommand` (commandes des raccourcis globaux, par exemple `toggle_live`) ; `window.linguaNote.shortcuts.getReport()` renvoie les raccourcis enregistrés et ceux qui ont échoué. Le renderer revalide chaque événement (`src/services/liveEvents.ts`) et applique la réconciliation provisoire/final (`src/services/liveReducer.ts`).
 
+### Historique et insertion via IPC
+
+`window.linguaNote.history` expose `getSettings()`, `setSettings(enabled, retentionDays)`, `list({query, limit, offset})`, `get(id)`, `rename(id, title)`, `remove(id)`, `removeAll(confirm)` et `export(id, format)`. Chaque appel correspond à une opération d'une **liste fermée** (`electron/history-client.cjs`) dont les arguments sont validés dans le processus principal avant toute requête (identifiant, durée de conservation, pagination, titre, format) ; `removeAll` ne supprime que si `confirm === true`. Réponse : `{ok, data}` ou `{ok:false, code, message}`. `export` ouvre la boîte « Enregistrer sous » **dans le processus principal** et écrit le fichier lui-même : le renderer ne fournit jamais de chemin ; il reçoit `{ok:true, saved}` (`saved:false` si l'utilisateur annule) ou `write_failed`.
+
+`window.linguaNote.insertion` (Windows) expose `arm()`, `stop()`, `status()` et `onStatus(listener)`. `arm()` exige une session en direct en cours (`no_live_session`), refuse sur une autre plateforme (`unsupported`) et lance un décompte de 3 s à l'issue duquel la fenêtre au premier plan est **verrouillée** comme cible (jamais une fenêtre de LinguaNote : `target_is_self`). État : `{supported, state: off|locking|on|paused, target:{title}|null, pendingChars, inserted, problem:{code,message}|null}`. Problèmes possibles : `target_left` (l'utilisateur a quitté la fenêtre cible : pause, le texte attend), `clipboard_not_restorable`, `insertion_failed`, `clipboard_restore_failed`, `pending_overflow`, `target_unknown`.
+
 ## Transcription en direct : `WebSocket /api/v1/live` (protocole 1)
 
 Contrat écrit **avant** l'implémentation (phase 2). Il vise à ce qu'une coupure de connexion ne perde ni ne duplique jamais de texte.
@@ -106,7 +130,7 @@ Les WebSocket ne sont pas soumis au CORS et le middleware HTTP ne s'y applique p
 
 | Message | Contenu |
 | --- | --- |
-| `{"type":"start","token":"…","protocol":1}` | Ouvre une session. |
+| `{"type":"start","token":"…","protocol":1,"source":"microphone"}` | Ouvre une session. `source` (`microphone`, `system` ou `both`, facultatif) est **purement informatif** : il est enregistré avec la session si l'historique est activé, et ne change rien au traitement. Toute autre valeur est refusée (`invalid_message`). |
 | `{"type":"resume","token":"…","protocol":1,"session_id":"…","last_event_id":N}` | Rattache une nouvelle connexion à une session détachée ; le serveur rejoue les événements d'`event_id` > N. |
 | trame binaire | 4 octets `seq` (uint32 big-endian, commence à 1, +1 par trame) puis le PCM (2 à 65 536 octets, nombre pair). Le client Electron envoie au plus 32 000 octets (1 s) par trame. |
 | `{"type":"stop"}` | Termine proprement : le reste de l'audio est finalisé, puis `session_ended`. |

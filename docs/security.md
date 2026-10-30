@@ -35,7 +35,28 @@
 
 ## Enregistrement et consentement
 
-L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateur visible dans la fenêtre. L'enregistrement classique s'arrête après 5 minutes ; le direct s'arrête sur demande, après 30 s sans audio ni ping, ou à la durée maximale de session (`LINGUANOTE_LIVE_MAX_SECONDS`). Le micro est libéré à l'arrêt, en cas d'erreur et à la fermeture de la fenêtre. Pas d'enregistrement caché. Le direct ne conserve ni l'audio ni le texte au-delà de la session : la fenêtre de rejeu (500 événements) et l'énoncé en cours sont effacés à la fin. Avant d'enregistrer ou de transcrire une conversation impliquant d'autres personnes, l'utilisateur doit obtenir leur consentement selon les règles de protection des données applicables.
+L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateur visible dans la fenêtre. L'enregistrement classique s'arrête après 5 minutes ; le direct s'arrête sur demande, après 30 s sans audio ni ping, ou à la durée maximale de session (`LINGUANOTE_LIVE_MAX_SECONDS`). Le micro est libéré à l'arrêt, en cas d'erreur et à la fermeture de la fenêtre. Pas d'enregistrement caché. Le direct ne conserve ni l'audio ni le texte au-delà de la session, **sauf si l'utilisateur a activé l'historique** (voir ci-dessous) : la fenêtre de rejeu (500 événements) et l'énoncé en cours sont effacés à la fin. Avant d'enregistrer ou de transcrire une conversation impliquant d'autres personnes, l'utilisateur doit obtenir leur consentement selon les règles de protection des données applicables.
+
+## Historique des transcriptions (phase 5)
+
+- **Désactivé par défaut et à l'initiative de l'utilisateur** (case à cocher dans l'application). Tant qu'il est désactivé, aucune donnée n'est écrite : le fichier de base n'est même pas créé.
+- **Ce qui est conservé** : le texte validé, ses horodatages, la langue estimée, le moteur et le modèle, la source (micro / son de l'ordinateur / les deux), la date. **Jamais** l'audio, ni le nom d'un fichier importé.
+- **Où** : `history.sqlite3` dans `LINGUANOTE_DATA_DIR`, soit `%APPDATA%\@linguanote\desktop\data` quand Electron lance le service (jamais dans le dossier d'installation ni dans Git).
+- **Conservation** : 7, 30 (défaut), 90, 365 jours ou sans limite, au choix. Les sessions plus anciennes sont supprimées au démarrage et **immédiatement** quand on raccourcit la durée.
+- **Suppression** : par session ou totale (confirmation explicite côté interface *et* côté service). SQLite est ouvert avec `secure_delete`, et le fichier est compacté (`VACUUM`, journal tronqué) après une suppression : les données supprimées ne restent pas dans le fichier. Éprouvé en relisant le fichier brut (voir `tests/test_history.py`).
+- **Limite assumée : pas de chiffrement propre à l'application.** Le fichier est en clair ; il n'est protégé que par les droits du compte Windows (et le chiffrement du disque, s'il est activé). C'est dit dans l'interface. Un chiffrement avec une clé du coffre Windows est possible plus tard.
+- **Requêtes de recherche** : le texte saisi n'est jamais interprété comme du SQL ni comme la syntaxe FTS (chaque mot est mis entre guillemets) ; les extraits surlignés sont rendus comme du texte, jamais comme du HTML.
+- **Pannes** : un échec d'écriture est signalé une fois (`history_write_failed`) sans interrompre le direct ni perdre le texte affiché ; une session interrompue par un arrêt brutal est marquée `interrupted`.
+
+## Insertion de texte dans une autre application (phase 5, Windows)
+
+L'insertion écrit dans l'application d'un tiers : elle est donc strictement encadrée.
+
+- **Opt-in, visible, par session** : il faut un direct en cours, un clic sur « Insérer le texte dans une autre application » et un décompte de 3 s pendant lequel l'utilisateur clique dans la cible. L'état (cible, texte en attente, problème) est toujours affiché ; elle s'arrête avec la session une fois le texte en attente inséré.
+- **Cible verrouillée** : la fenêtre au premier plan à la fin du décompte. Le script de collage vérifie, **au moment même** de la frappe, que cette fenêtre est toujours au premier plan, sinon il ne touche à aucune touche. Si l'utilisateur change de fenêtre, l'insertion se met en pause (le texte attend, rien n'est frappé ailleurs) et reprend seule au retour. Les fenêtres de LinguaNote ne peuvent jamais être la cible.
+- **Presse-papiers emprunté, pas écrasé** : le contenu texte/HTML/RTF est enregistré, remplacé le temps du collage (Ctrl+V), puis remis. S'il contient autre chose (image, fichiers, bitmap), **rien n'est écrasé** et l'insertion attend. Si l'utilisateur copie autre chose entre-temps, son nouveau contenu est laissé tel quel. Les formats internes d'applications (par exemple l'objet OLE d'Excel) sont perdus à la restauration : limite assumée.
+- **Aucun texte dans une ligne de commande** : le script PowerShell ne reçoit que l'identifiant de la fenêtre attendue ; le texte transite uniquement par le presse-papiers.
+- **Limites** : une application lancée en administrateur ignore les touches envoyées par un processus normal (UIPI) sans qu'on puisse le détecter ; chaque collage coûte environ une demi-seconde (démarrage de PowerShell) ; un utilisateur qui maintient une touche modificatrice pendant le collage peut le perturber ; pas de prise en charge de macOS ni de Linux.
 
 ## Environnement d'exécution d'Electron
 
