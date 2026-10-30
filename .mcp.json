@@ -4,7 +4,8 @@
       "command": "services/transcription/.venv/Scripts/python.exe",
       "args": ["services/transcription/app/mcp_server.py"],
       "env": {
-        "LINGUANOTE_API_URL": "http://127.0.0.1:8765"
+        "LINGUANOTE_API_URL": "http://127.0.0.1:8765",
+        "LINGUANOTE_API_TOKEN": "${LINGUANOTE_API_TOKEN}"
       }
     },
     "playwright": {

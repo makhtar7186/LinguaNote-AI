@@ -18,7 +18,10 @@ export function useRecorder({ onRecorded, onError, maxSeconds = MAX_RECORDING_SE
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
   const callbacks = useRef({ onRecorded, onError });
-  callbacks.current = { onRecorded, onError };
+  // Always call the latest callbacks from recorder events without re-creating the recorder.
+  useEffect(() => {
+    callbacks.current = { onRecorded, onError };
+  });
 
   const releaseStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());

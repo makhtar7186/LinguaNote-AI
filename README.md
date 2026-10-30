@@ -12,24 +12,27 @@ Tout le traitement reste sur la machine. Une seule action utilise le réseau : l
 
 ## Installation et démarrage
 
-Service Python (terminal 1) :
+Installation du service Python (une fois) :
 
 ```powershell
 cd services\transcription
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[api,windows-asr,dev]"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 ```
 
-Interface Electron (terminal 2, depuis la racine du dépôt) :
+Application Electron (depuis la racine du dépôt) :
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Aperçu navigateur sans Electron : `npm run dev:web`, puis `http://127.0.0.1:5173`. Le renderer appelle alors directement `http://127.0.0.1:8765` (CORS limité à l'origine 5173, modifiable via `LINGUANOTE_CORS_ORIGINS`). Le client Electron passe, lui, par IPC.
+Electron **démarre lui-même le service Python** (`services/transcription/.venv`, ou `LINGUANOTE_PYTHON`) sur un port libre de `127.0.0.1`, avec un jeton secret généré à chaque lancement, et l'arrête à la fermeture. Aucun terminal séparé n'est nécessaire.
+
+Service seul (API, tests manuels, serveur MCP) : voir [services/transcription/README.md](services/transcription/README.md). Le jeton `LINGUANOTE_API_TOKEN` y est obligatoire.
+
+Aperçu navigateur sans Electron : démarrer le service à la main avec `LINGUANOTE_CORS_ORIGINS=http://127.0.0.1:5173`, définir `VITE_TRANSCRIPTION_TOKEN` avec le même jeton, puis `npm run dev:web` et `http://127.0.0.1:5173`. Dans ce mode seulement, le renderer appelle directement le service ; dans l'application Electron, il passe par IPC et ne voit jamais le jeton.
 
 Toutes les variables d'environnement sont listées dans [.env.example](.env.example).
 
@@ -39,6 +42,7 @@ Toutes les variables d'environnement sont listées dans [.env.example](.env.exam
 | --- | --- | --- |
 | Tests frontend (Vitest) | `npm test` | racine |
 | Vérification TypeScript | `npm run typecheck` | racine |
+| Lint frontend (ESLint) | `npm run lint` | racine |
 | Build du renderer | `npm run build` | racine |
 | Tests backend (Pytest) | `python -m pytest` | `services/transcription` |
 | Lint backend (Ruff) | `python -m ruff check app tests` | `services/transcription` |
@@ -50,15 +54,16 @@ Les tests Pytest qui convertissent de l'audio exigent FFmpeg ; ils sont ignorés
 - Fichier : 50 Mio maximum, audio de 10 minutes maximum par défaut (`LINGUANOTE_MAX_AUDIO_SECONDS`). Le traitement est séquentiel : une transcription à la fois.
 - Moteur : faster-whisper `base`, CPU INT8. La qualité n'a pas été mesurée sur le wolof ni sur le code-switching ; la langue affichée est une estimation du modèle, pas une garantie.
 - Le micro enregistre jusqu'à 5 minutes puis transcrit. Pas de transcription en direct, pas de bulle flottante, pas de capture de l'audio système, pas d'historique ni d'export (phases 2 à 5 de la feuille de route, voir [docs/roadmap.md](docs/roadmap.md)).
-- Le service Python n'est pas encore lancé par Electron et aucun installateur n'existe (voir « Packaging » dans [docs/roadmap.md](docs/roadmap.md)).
-- Testé uniquement sous Windows 11. L'application Electron n'a pas été lancée dans cette session de travail : seuls les tests unitaires, le typecheck et le build ont été exécutés.
+- Le service Python est lancé par Electron depuis l'environnement de développement (`.venv`). Il n'est pas encore embarqué : aucun installateur n'existe (voir « Packaging » dans [docs/roadmap.md](docs/roadmap.md)).
+- Testé uniquement sous Windows 11. Le lanceur a été vérifié contre le vrai service (démarrage, 401 sans jeton, 200 avec jeton, arrêt sans processus orphelin). La fenêtre Electron elle-même n'a pas été ouverte et aucune transcription avec le vrai modèle n'a été exécutée : seuls les tests unitaires, le lint, le typecheck et le build ont été exécutés.
 
 ## Sécurité et confidentialité
 
 Résumé ; détails dans [docs/security.md](docs/security.md).
 
 - Le service écoute sur `127.0.0.1` uniquement et refuse tout autre nom d'hôte.
-- Jeton optionnel `LINGUANOTE_API_TOKEN` : s'il est défini, toute requête sans l'en-tête `X-LinguaNote-Token` correct reçoit 401. Il protège contre les pages web qui enverraient des requêtes vers le port local.
+- Jeton `LINGUANOTE_API_TOKEN` **obligatoire** : le service ne démarre pas sans lui, et toute requête sans l'en-tête `X-LinguaNote-Token` correct reçoit 401. Il protège contre les autres processus locaux et contre les pages web qui enverraient des requêtes vers le port local. Electron le génère à chaque lancement.
+- Les corps de requête trop grands sont refusés (413) avant toute lecture multipart ; une inférence a un délai maximal (504).
 - Electron : `contextIsolation`, `sandbox`, pas de `nodeIntegration`, API preload minimale, messages IPC validés, CSP, micro seul autorisé.
 - Les journaux (`data/logs`) ne contiennent ni audio ni texte transcrit.
 

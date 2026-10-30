@@ -1,5 +1,5 @@
 // Starts and stops the local Python service. Kept free of Electron imports so it can be unit-tested.
-const crypto = require("node:crypto");
+const nodeCrypto = require("node:crypto");
 const net = require("node:net");
 const path = require("node:path");
 const childProcess = require("node:child_process");
@@ -12,7 +12,7 @@ const SERVICE_DIR = path.join(__dirname, "..", "..", "..", "services", "transcri
 class BackendStartError extends Error {}
 
 function newToken() {
-  return crypto.randomBytes(32).toString("base64url");
+  return nodeCrypto.randomBytes(32).toString("base64url");
 }
 
 function findFreePort() {

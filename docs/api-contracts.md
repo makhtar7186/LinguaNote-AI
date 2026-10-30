@@ -4,7 +4,9 @@ Service local FastAPI, `http://127.0.0.1:8765`. Schémas : `services/transcripti
 
 ## Authentification
 
-Si `LINGUANOTE_API_TOKEN` est défini côté service, chaque requête (hors préflight CORS `OPTIONS`) doit porter `X-LinguaNote-Token: <jeton>`, sinon réponse `401` `unauthorized`. Les en-têtes `Host` autres que `127.0.0.1` et `localhost` sont refusés (`400`).
+`LINGUANOTE_API_TOKEN` (16 caractères minimum) est obligatoire : le service ne démarre pas sans lui (sauf `LINGUANOTE_ALLOW_NO_AUTH=1`, développement uniquement). Chaque requête (hors préflight CORS `OPTIONS`) doit porter `X-LinguaNote-Token: <jeton>`, sinon réponse `401` `unauthorized`. Les en-têtes `Host` autres que `127.0.0.1` et `localhost` sont refusés (`400`).
+
+Démarrage : `uvicorn --factory app.main:create_app` (il n'existe plus d'objet `app` global).
 
 ## `GET /health`
 
@@ -21,6 +23,8 @@ Ne charge aucun modèle et ne télécharge rien.
   "limits": { "max_upload_bytes": 52428800, "max_audio_seconds": 600.0, "extensions": [".aac", ".flac", "..."] }
 }
 ```
+
+`limits.max_audio_seconds` est la limite **effective** : la valeur configurée, abaissée à ce que le moteur choisi peut traiter (Omnilingual : 39 s). Les clients (interface, pont MCP, client Electron) lisent ici la taille maximale et les extensions au lieu de les dupliquer.
 
 `engine_selected: true` signifie que la dépendance est installée, pas que les poids sont déjà téléchargés. `setup_message` décrit ce qui manque (moteur ou FFmpeg).
 
@@ -56,7 +60,7 @@ Corps : `{ "detail": "<message lisible>", "code": "<code stable>" }`.
 | --- | --- | --- |
 | 400 | `empty_file` | Fichier vide |
 | 401 | `unauthorized` | Jeton absent ou invalide |
-| 413 | `file_too_large` | Dépasse `LINGUANOTE_MAX_UPLOAD_MIB` |
+| 413 | `file_too_large` | Dépasse `LINGUANOTE_MAX_UPLOAD_MIB` (le corps entier est refusé avant lecture au-delà de cette taille + 64 Kio de surcoût multipart) |
 | 413 | `audio_too_long` | Audio plus long que `LINGUANOTE_MAX_AUDIO_SECONDS` (ou que la limite du moteur) |
 | 415 | `unsupported_extension` | Extension non autorisée |
 | 415 | `no_audio_stream` | FFmpeg ne trouve aucune piste audio décodable |
@@ -66,13 +70,14 @@ Corps : `{ "detail": "<message lisible>", "code": "<code stable>" }`.
 | 503 | `ffmpeg_missing` | FFmpeg introuvable |
 | 503 | `model_unavailable` | Moteur ou modèle non chargeable (dépendance absente, hors-ligne au premier usage) |
 | 504 | `conversion_timeout` | Conversion FFmpeg au-delà de `LINGUANOTE_FFMPEG_TIMEOUT_SECONDS` |
+| 504 | `inference_timeout` | Inférence au-delà de `LINGUANOTE_INFERENCE_TIMEOUT_SECONDS` (l'inférence déjà démarrée se termine en arrière-plan) |
 
 ## Pont IPC Electron
 
 Le renderer n'appelle jamais le service directement dans l'application packagée. `window.linguaNote` expose `health()` et `transcribe({name, type, bytes})`. Le processus principal valide l'émetteur et la charge utile, applique des délais (5 s pour `health`, 15 min pour `transcribe`) et répond **toujours** par une enveloppe, sans lever d'exception :
 
 - succès : `{ "ok": true, "data": <réponse du service> }` (pour `health` : `{ "ok": true, ...champs de /health }`)
-- échec : `{ "ok": false, "code": "...", "message": "..." }`, avec en plus les codes locaux `invalid_payload`, `service_unavailable`, `timeout`, `http_error`, `unknown`.
+- échec : `{ "ok": false, "code": "...", "message": "..." }`, avec en plus les codes locaux `invalid_payload`, `service_unavailable`, `timeout`, `http_error`, `unknown`, `starting` (le service local démarre encore) et `backend_start_failed` (il n'a pas pu démarrer ; `message` en donne la cause). Avant l'envoi, le processus principal lit les limites dans `/health` et refuse localement un fichier trop gros ou d'une extension non prise en charge.
 
 Le renderer revalide la forme des réponses (`src/services/transcriptionClient.ts`).
 

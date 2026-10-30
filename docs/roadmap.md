@@ -38,17 +38,19 @@ Diarisation, résumés, adaptation du wolof si l'évaluation le justifie, fourni
 
 Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un backend lançable par Electron.
 
-- [ ] Lancer et arrêter le service Python depuis le processus principal Electron (port libre, jeton généré, arrêt propre).
+- [x] Lancer et arrêter le service Python depuis le processus principal Electron (port libre, jeton généré, arrêt de l'arbre de processus). Vérifié contre le vrai service ; la fenêtre Electron complète n'a pas encore été exercée de bout en bout.
 - [ ] Embarquer le service (PyInstaller ou Python embarqué) ; décider de la livraison de FFmpeg (licence) et des modèles (cache dans `%LOCALAPPDATA%`, téléchargement avec consentement, mode hors-ligne).
 - [ ] `electron-builder` (installateur NSIS), icône, signature de code, mises à jour.
 - [ ] Déplacer le dossier de journaux hors de l'arborescence des sources pour la version installée.
 - [ ] Vérifier l'application packagée (chemin `dist/index.html`, CSP, permissions).
 - [ ] Verrouiller les dépendances Python (un seul outil) et fournir des scripts reproductibles dans `scripts/`.
-- [ ] Intégration continue (lint, typecheck, tests, build).
+- [x] Intégration continue : `.github/workflows/ci.yml` (Ruff + Pytest, ESLint + typecheck + Vitest + build). Écrit mais **jamais exécuté** : il faut un dépôt GitHub pour le valider.
 
 ## Dette connue
 
-- ESLint/Prettier non configurés côté desktop (Ruff côté Python).
+- Prettier non configuré (ESLint côté desktop et Ruff côté Python le sont).
+- Une inférence déjà démarrée ne peut pas être annulée ; pas de file d'attente bornée.
 - Pas de test Playwright / Electron de bout en bout.
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
 - Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.
+- Aucune mesure de qualité (phase 1) : le support du wolof et du code-switching reste non démontré.

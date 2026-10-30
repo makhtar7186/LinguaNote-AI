@@ -8,10 +8,13 @@ Depuis `services/transcription`, installer l’API et le moteur CPU compatible W
 
 ```powershell
 python -m pip install -e ".[api,windows-asr,dev]"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+$env:LINGUANOTE_API_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+python -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8765
 ```
 
-FFmpeg doit être installé séparément et accessible dans le `PATH`. Si nécessaire, définir `LINGUANOTE_FFMPEG` avec le chemin complet de `ffmpeg.exe`. Ouvrir `http://127.0.0.1:8765/docs` pour soumettre un fichier via Swagger UI.
+Le service **refuse de démarrer sans `LINGUANOTE_API_TOKEN`** (16 caractères minimum). Seul `LINGUANOTE_ALLOW_NO_AUTH=1` désactive l'authentification, pour du développement ponctuel. Toute requête doit porter l'en-tête `X-LinguaNote-Token`, y compris pour ouvrir `/docs` depuis un outil externe. Quand l'application Electron est lancée (`npm run dev`), elle démarre elle-même ce service avec un jeton éphémère sur un port libre : la commande ci-dessus n'est utile que pour développer ou tester l'API seule.
+
+FFmpeg doit être installé séparément et accessible dans le `PATH`. Si nécessaire, définir `LINGUANOTE_FFMPEG` avec le chemin complet de `ffmpeg.exe`. Swagger UI (`/docs`) n'envoie pas l'en-tête de jeton : utiliser `curl` ou un client HTTP avec `X-LinguaNote-Token`.
 
 `faster-whisper` utilise le modèle multilingue `base` par défaut, le charge en CPU INT8, et détecte la langue automatiquement. Les poids du modèle sont téléchargés depuis Hugging Face lors de la première demande explicite de transcription, jamais au démarrage. Pour choisir un autre modèle, définir `LINGUANOTE_WHISPER_MODEL` avant de lancer le service. La machine doit avoir accès à Internet pour ce premier téléchargement. Le service écoute uniquement sur loopback dans la commande ci-dessus.
 
@@ -32,6 +35,6 @@ Les tests utilisent un moteur factice (aucun modèle téléchargé) et le vrai F
 
 ## Serveur MCP local
 
-Le serveur stdio expose `service_status` et `transcribe_file`. La configuration racine `.mcp.json` le lance avec l'environnement Python du backend. Installez le SDK MCP dans cet environnement avec `python -m pip install -e ".[api,windows-asr,mcp-server]"`, puis démarrez FastAPI sur `127.0.0.1:8765` avant d'appeler les outils. `transcribe_file` accepte un chemin de média local et retourne le résultat fourni par l'API. Le fichier est transmis uniquement au service local; le téléchargement des poids du modèle peut nécessiter Internet.
+Le serveur stdio expose `service_status` et `transcribe_file`. La configuration racine `.mcp.json` le lance avec l'environnement Python du backend. Installez le SDK MCP dans cet environnement avec `python -m pip install -e ".[api,windows-asr,mcp-server]"`, puis démarrez FastAPI sur `127.0.0.1:8765` avant d'appeler les outils. `transcribe_file` accepte un chemin de média local et retourne le résultat fourni par l'API. Le téléchargement des poids du modèle peut nécessiter Internet.
 
-Si un jeton API est activé, définissez `LINGUANOTE_API_TOKEN` dans l'environnement du processus MCP et du service. Pour changer l'URL locale, configurez `LINGUANOTE_API_URL`.
+Le jeton étant obligatoire, définissez la même valeur de `LINGUANOTE_API_TOKEN` dans l'environnement du service et du processus MCP. L'URL (`LINGUANOTE_API_URL`) doit rester une adresse **loopback en http** : le fichier audio et le jeton y sont envoyés, donc un hôte distant est refusé sauf `LINGUANOTE_ALLOW_REMOTE_API=1` avec une URL https. Les limites de taille et les extensions sont lues auprès du service (`/health`), pas dupliquées dans le pont MCP.

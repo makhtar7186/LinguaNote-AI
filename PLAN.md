@@ -2,6 +2,8 @@
 
 Cette revue s’appuie sur la conception et le protocole d’évaluation dans `docs/`, ainsi que sur l’état du prototype décrit par `README.md` (client Electron, import média et capture microphone déjà présents). Le dépôt ne contenait pas de `PLAN.md` : ce fichier consigne les remarques de revue, sans réécrire le plan d’architecture.
 
+> **Mise à jour (audit Claude + Codex).** Les limites (50 Mio, moins de 39 s) citées ci-dessous datent d'une version antérieure : la limite de 39 s ne concerne plus que le moteur expérimental Omnilingual ; faster-whisper accepte 10 minutes par défaut (`/health` annonce la limite effective). Sécurité du service local, lancement du backend par Electron, limites unifiées, lint et CI sont traités ; voir [docs/roadmap.md](docs/roadmap.md) pour l'état à jour. Restent ouverts : corpus et mesures (phase 1), contrat live (phase 2), packaging.
+
 ## Revue Codex
 
 ### Priorités et séquencement
