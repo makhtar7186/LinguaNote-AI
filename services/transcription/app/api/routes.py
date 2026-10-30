@@ -18,6 +18,7 @@ from app.engines.base import ModelUnavailableError, TranscriptionResult
 from app.engines.registry import capabilities_for, get_engine
 from app.errors import ApiError
 from app.schemas.transcription import HealthResponse, Limits, SegmentOut, TranscriptionResponse
+from app.storage.history import HistoryRepository, SessionRecorder
 
 logger = logging.getLogger("linguanote.api")
 
@@ -71,7 +72,29 @@ def _await_inference(future: "Future[TranscriptionResult]", timeout: int) -> Tra
         raise ApiError(504, "inference_timeout", f"Transcription exceeded {timeout} seconds.") from exc
 
 
-def build_router(settings: Settings) -> APIRouter:
+def save_file_transcription(
+    history: HistoryRepository | None, result: TranscriptionResult, duration: float
+) -> str | None:
+    """Store a finished file transcription if (and only if) the user turned the history on."""
+    if history is None:
+        return None
+    recorder = SessionRecorder.begin(history, kind="file", engine=result.engine, model=result.model)
+    if recorder is None:
+        return None
+    if result.segments:
+        for segment in result.segments:
+            recorder.segment(
+                text=segment.text, start_seconds=segment.start_seconds, end_seconds=segment.end_seconds,
+                language=result.language, language_probability=result.language_probability,
+            )
+    elif result.text.strip():
+        # No timing from the engine: stored as such, never invented.
+        recorder.segment(text=result.text, language=result.language, language_probability=result.language_probability)
+    recorder.finish(duration_seconds=duration)
+    return recorder.session_id if recorder.ok else None
+
+
+def build_router(settings: Settings, history: HistoryRepository | None = None) -> APIRouter:
     router = APIRouter()
     # Bounds work in flight (conversion + inference). The single inference worker would otherwise
     # let any number of already-uploaded files pile up behind it.
@@ -132,7 +155,9 @@ def build_router(settings: Settings) -> APIRouter:
                 "Transcribed upload ext=%s bytes=%d audio=%.1fs engine=%s model=%s elapsed=%.2fs",
                 extension, size, duration, result.engine, result.model, time.perf_counter() - started,
             )
+            saved_session_id = save_file_transcription(history, result, duration)
             return TranscriptionResponse(
+                saved_session_id=saved_session_id,
                 text=result.text,
                 engine=result.engine,
                 model=result.model,

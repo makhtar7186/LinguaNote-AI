@@ -1,12 +1,16 @@
 """Runtime settings read from LINGUANOTE_* environment variables."""
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 SUPPORTED_EXTENSIONS = frozenset({
     ".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4",
     ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma",
 })
 DEFAULT_CORS_ORIGINS = "http://127.0.0.1:5173"
+# services/transcription/app/config.py -> repository root/data (git-ignored). Electron points the service at the
+# user profile instead (LINGUANOTE_DATA_DIR).
+DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 MIN_TOKEN_LENGTH = 16
 # Multipart framing (boundaries, headers) added on top of the file itself.
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
@@ -33,6 +37,7 @@ class Settings:
     live_idle_timeout_seconds: float = 30.0
     live_resume_seconds: float = 30.0
     live_job_timeout_seconds: float = 60.0
+    data_dir: Path = DEFAULT_DATA_DIR
 
 
 def load_settings() -> Settings:
@@ -52,6 +57,7 @@ def load_settings() -> Settings:
         live_idle_timeout_seconds=float(os.getenv("LINGUANOTE_LIVE_IDLE_SECONDS", "30")),
         live_resume_seconds=float(os.getenv("LINGUANOTE_LIVE_RESUME_SECONDS", "30")),
         live_job_timeout_seconds=float(os.getenv("LINGUANOTE_LIVE_JOB_TIMEOUT_SECONDS", "60")),
+        data_dir=Path(os.getenv("LINGUANOTE_DATA_DIR") or DEFAULT_DATA_DIR),
     )
 
 

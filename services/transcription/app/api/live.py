@@ -129,7 +129,7 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
             await _reject(connection, "model_unavailable", str(exc))
             return None
         try:
-            return manager.create(engine), False, 0
+            return manager.create(engine, source=getattr(opening, "source", None)), False, 0
         except BusyError:
             await _reject(connection, "busy", "A live session is already running.")
             return None

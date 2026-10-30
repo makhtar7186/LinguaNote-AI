@@ -6,6 +6,7 @@ from collections.abc import Callable
 from app.engines.base import SpeechEngine
 from app.live.segmenter import SegmenterConfig
 from app.live.session import LiveLimits, LiveSession
+from app.storage.history import HistoryRepository, SessionRecorder
 
 
 class BusyError(RuntimeError):
@@ -19,8 +20,10 @@ class LiveManager:
         *,
         segmenter_config: SegmenterConfig | None = None,
         clock: Callable[[], float] = time.monotonic,
+        history: HistoryRepository | None = None,
     ) -> None:
         self.limits = limits
+        self._history = history
         self._segmenter_config = segmenter_config
         self._clock = clock
         self._sessions: dict[str, LiveSession] = {}
@@ -33,13 +36,19 @@ class LiveManager:
                 session.discard()
                 del self._sessions[session_id]
 
-    def create(self, engine: SpeechEngine) -> LiveSession:
+    def create(self, engine: SpeechEngine, source: str | None = None) -> LiveSession:
         self.sweep()
         if any(not session.ended for session in self._sessions.values()):
             raise BusyError("A live session is already running.")
         session_id = secrets.token_urlsafe(16)
+        # None unless the user turned the history on: then the session is recorded as it goes.
+        recorder = (
+            SessionRecorder.begin(self._history, kind="live", source=source, engine=engine.name, model=engine.model)
+            if self._history is not None else None
+        )
         session = LiveSession(
             session_id, engine, self.limits, segmenter_config=self._segmenter_config, clock=self._clock,
+            recorder=recorder,
         )
         self._sessions[session_id] = session
         return session

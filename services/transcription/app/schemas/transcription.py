@@ -17,6 +17,8 @@ class TranscriptionResponse(BaseModel):
     language: str | None = None
     language_probability: float | None = None
     segments: list[SegmentOut] = []
+    # Set only when the user turned the history on and the transcription was saved there.
+    saved_session_id: str | None = None
 
 
 class Limits(BaseModel):

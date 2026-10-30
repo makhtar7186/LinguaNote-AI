@@ -18,6 +18,7 @@ from pathlib import Path
 from app import inference
 from app.engines.base import SpeechEngine, TranscriptionResult
 from app.live.segmenter import SAMPLE_RATE, SegmenterConfig, Utterance, UtteranceSegmenter
+from app.storage.history import SessionRecorder
 
 logger = logging.getLogger("linguanote.live")
 
@@ -63,8 +64,11 @@ class LiveSession:
         *,
         segmenter_config: SegmenterConfig | None = None,
         clock: Callable[[], float] = time.monotonic,
+        recorder: SessionRecorder | None = None,
     ) -> None:
         self.session_id = session_id
+        self._recorder = recorder
+        self._history_warned = False
         self.engine = engine
         self.limits = limits
         self._clock = clock
@@ -190,6 +194,7 @@ class LiveSession:
     def discard(self) -> None:
         """Drop the session and its buffered text from memory (resume window over, or server shutdown)."""
         self._worker.cancel()
+        self._close_history("interrupted")  # no-op if the session already ended properly
         self.ended = True
         self.events.clear()
 
@@ -208,6 +213,7 @@ class LiveSession:
         self.emit("error", code=code, message=message, fatal=True)
         self.ended = True
         self.end_reason = "error"
+        self._close_history("interrupted")
         self.emit("session_ended", reason="error", utterances=self.final_count)
 
     # -- worker ---------------------------------------------------------------------------------------
@@ -218,6 +224,7 @@ class LiveSession:
             if kind == _END:
                 self.ended = True
                 self.end_reason = payload
+                self._close_history("complete")
                 self.emit("session_ended", reason=payload, utterances=self.final_count)
                 return
             await self._process(kind, payload)
@@ -248,10 +255,30 @@ class LiveSession:
         else:
             self._finalized.add(utterance.utterance_id)
             self.final_count += 1
+            await self._record(result, text, utterance)
             self.emit(
                 "final", utterance_id=utterance.utterance_id, text=text, **times,
                 language=result.language, language_probability=result.language_probability,
             )
+
+    async def _record(self, result: TranscriptionResult, text: str, utterance: Utterance) -> None:
+        """Append a finished utterance to the history, off the event loop. A storage problem is reported once."""
+        if self._recorder is None:
+            return
+        saved = await asyncio.to_thread(
+            self._recorder.segment, text=text, start_seconds=utterance.start_seconds,
+            end_seconds=utterance.end_seconds, language=result.language,
+            language_probability=result.language_probability,
+        )
+        if not saved and not self._history_warned:
+            self._history_warned = True  # the text still reaches the user; only its saving failed
+            self.emit("error", code="history_write_failed", fatal=False,
+                      message="Le texte n'a pas pu être enregistré dans l'historique (le direct continue).")
+
+    def _close_history(self, status: str) -> None:
+        recorder, self._recorder = self._recorder, None  # closed once
+        if recorder is not None:
+            recorder.finish(duration_seconds=self.segmenter.total_seconds, status=status)
 
     async def _transcribe(self, pcm: bytes) -> TranscriptionResult:
         directory = tempfile.mkdtemp(prefix="linguanote-live-")

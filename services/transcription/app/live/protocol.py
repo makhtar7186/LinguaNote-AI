@@ -18,6 +18,8 @@ class StartMessage(_Strict):
     type: Literal["start"]
     token: str = Field(default="", max_length=512)
     protocol: int
+    # What the client listens to. Informational: it is stored with the session in the history, nothing else.
+    source: Literal["microphone", "system", "both"] | None = None
 
 
 class ResumeMessage(_Strict):

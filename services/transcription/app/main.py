@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.history import build_history_router
 from app.api.live import build_live_router
 from app.api.routes import UPLOAD_PATH, build_router
 from app.config import MULTIPART_OVERHEAD_BYTES, Settings, load_settings, validate_settings
@@ -15,6 +16,8 @@ from app.live.manager import LiveManager
 from app.live.session import LiveLimits
 from app.logging_config import configure_logging
 from app.security import BodyLimitMiddleware
+from app.storage.database import Database
+from app.storage.history import HistoryRepository
 
 TOKEN_HEADER = "X-LinguaNote-Token"
 logger = logging.getLogger("linguanote.api")
@@ -25,17 +28,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     validate_settings(settings)
 
+    history = HistoryRepository(Database(settings.data_dir / "history.sqlite3"))
     live_manager = LiveManager(LiveLimits(
         max_session_seconds=settings.live_max_session_seconds,
         idle_timeout_seconds=settings.live_idle_timeout_seconds,
         resume_seconds=settings.live_resume_seconds,
         job_timeout_seconds=settings.live_job_timeout_seconds,
-    ))
+    ), history=history)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         log_path = configure_logging()
         logger.info("Logging to %s", log_path)
+        try:
+            # A session left "recording" by a crash is marked interrupted; expired sessions are deleted.
+            history.mark_interrupted()
+            history.purge_expired()
+        except Exception as error:  # noqa: BLE001 - history upkeep must never stop the service from starting
+            logger.warning("History upkeep failed (%s)", type(error).__name__)
         yield
         live_manager.shutdown()
 
@@ -73,7 +83,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_bytes=settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES,
         upload_path=UPLOAD_PATH,
     )
-    app.include_router(build_router(settings))
+    app.include_router(build_router(settings, history))
+    app.include_router(build_history_router(history))
     app.include_router(build_live_router(settings, live_manager))
+    app.state.history = history
     app.state.live_manager = live_manager  # exposed for diagnostics and tests
     return app
