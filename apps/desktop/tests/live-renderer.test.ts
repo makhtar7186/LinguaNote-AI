@@ -61,6 +61,26 @@ describe("liveReducer reconciliation", () => {
     expect(state.status).toBe("ended");
   });
 
+  it("tracks pause and clears it when the session leaves the live state", () => {
+    let state = run([{ type: "reset" }, { type: "client_state", state: "active" }, { type: "pause_state", paused: true }]);
+    expect(state.paused).toBe(true);
+    state = run([{ type: "client_state", state: "reconnecting" }], state);
+    expect(state.paused).toBe(true); // a pause survives a reconnection
+    state = run([{ type: "pause_state", paused: false }, { type: "pause_state", paused: true },
+      { type: "session_ended", event_id: 1, reason: "client_stop", utterances: 0 }], state);
+    expect(state.paused).toBe(false);
+  });
+
+  it("starts a new session from a clean transcript in every window, not only the one that started it", () => {
+    const previous = run([final(1, "ancien texte", 1), { type: "session_ended", event_id: 2, reason: "client_stop", utterances: 1 }]);
+    expect(previous.finals).toHaveLength(1);
+    const fresh = run([{ type: "client_state", state: "connecting" }], previous);
+    expect(fresh).toMatchObject({ status: "connecting", finals: [], partial: null, lastEventId: 0, endReason: null });
+    // ...but a "connecting" while a session is already running is a plain status change, not a reset.
+    const running = run([final(1, "en cours", 1), { type: "client_state", state: "reconnecting" }]);
+    expect(run([{ type: "client_state", state: "connecting" }], running).finals).toHaveLength(1);
+  });
+
   it("records non-fatal notices without stopping and marks fatal errors as failed", () => {
     let state = run([{ type: "error", code: "inference_failed", message: "x", fatal: false, event_id: 1, utterance_id: 4 }]);
     expect(state.notices).toEqual([{ code: "inference_failed", message: "x", utterance_id: 4, fatal: false }]);
@@ -93,6 +113,11 @@ describe("parseLiveEvent", () => {
     expect(parseLiveEvent({ type: "client_state", state: "active" })).toEqual({ type: "client_state", state: "active" });
     expect(parseLiveEvent({ type: "session_started", resumed: true, engine: { name: "e", model: "m" } }))
       .toMatchObject({ resumed: true, engine: { name: "e", model: "m" } });
+  });
+
+  it("parses pause_state and rejects a non-boolean one", () => {
+    expect(parseLiveEvent({ type: "pause_state", paused: true })).toEqual({ type: "pause_state", paused: true });
+    expect(parseLiveEvent({ type: "pause_state", paused: "yes" })).toBeNull();
   });
 
   it.each([

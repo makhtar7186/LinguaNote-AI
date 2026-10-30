@@ -22,6 +22,9 @@
 | Saturation CPU | Un seul worker d'inférence ; modèle chargé une seule fois ; admission bornée (`429 busy` au-delà de `LINGUANOTE_MAX_PENDING`) ; délai d'inférence (`504 inference_timeout`), les tâches en attente sont annulées | Une inférence déjà démarrée ne peut pas être interrompue (elle se termine en arrière-plan). Le refus 429 intervient après la réception du fichier (borné par la limite de taille), pas avant |
 | Pont MCP redirigé vers un hôte distant | `LINGUANOTE_API_URL` limitée à http loopback ; hôte distant uniquement avec `LINGUANOTE_ALLOW_REMOTE_API=1` et https ; limites lues depuis `/health` | - |
 | WebSocket du direct ouvert depuis une page web (les WebSocket échappent au CORS et au middleware HTTP) | Contrôle de l'en-tête `Origin` (refus 1008), jeton exigé dans le premier message sous 5 s, comparé en temps constant, jamais dans l'URL ni les journaux ; hôtes de confiance (Host) | Le client Electron (Node) n'envoie pas d'`Origin` : un processus local connaissant le jeton reste hors de portée de cette mesure |
+| Deuxième fenêtre (bulle) élargissant la surface IPC | Les deux fenêtres ont les mêmes réglages durcis (`contextIsolation`, `sandbox`, pas de `nodeIntegration`, navigation et `window.open` bloqués) ; chaque canal IPC vérifie que l'émetteur est l'une des deux fenêtres **et** que sa page est exactement `index.html` ou `bubble.html` (`app-urls.cjs`) ; le micro n'est accordé qu'à ces deux fenêtres | - |
+| Enregistrement à l'insu de l'utilisateur | Démarrer la dictée (bouton ou raccourci) affiche toujours la bulle ; elle ne peut pas être masquée pendant l'enregistrement (`recording_active`) ; indicateur rouge pulsant + point REC ; la pause libère le micro | Un raccourci global peut démarrer l'enregistrement sans que la fenêtre ait le focus : c'est voulu, d'où l'indicateur permanent |
+| Raccourcis globaux détournés ou en conflit | Accélérateurs fixes ou fournis par l'environnement de l'utilisateur ; échec d'enregistrement signalé ; ils ne déclenchent que des actions locales (démarrer/arrêter, pause, afficher/masquer) | - |
 | Fuite du jeton vers le renderer pendant le direct | La connexion appartient au processus principal ; le renderer ne transmet que de l'audio (octets validés) et reçoit des événements validés | - |
 | Renderer compromis | `contextIsolation`, `sandbox`, pas de `nodeIntegration`, preload à deux fonctions, vérification de l'URL de l'émetteur IPC, validation de la charge utile, navigation et `window.open` bloqués | - |
 | Injection de scripts | CSP : stricte dans le build packagé (meta `Content-Security-Policy` plus en-tête de session), assouplie en développement pour Vite | Vérifier le comportement dans l'application packagée |
@@ -31,6 +34,10 @@
 ## Enregistrement et consentement
 
 L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateur visible dans la fenêtre. L'enregistrement classique s'arrête après 5 minutes ; le direct s'arrête sur demande, après 30 s sans audio ni ping, ou à la durée maximale de session (`LINGUANOTE_LIVE_MAX_SECONDS`). Le micro est libéré à l'arrêt, en cas d'erreur et à la fermeture de la fenêtre. Pas d'enregistrement caché. Le direct ne conserve ni l'audio ni le texte au-delà de la session : la fenêtre de rejeu (500 événements) et l'énoncé en cours sont effacés à la fin. Avant d'enregistrer ou de transcrire une conversation impliquant d'autres personnes, l'utilisateur doit obtenir leur consentement selon les règles de protection des données applicables.
+
+## Environnement d'exécution d'Electron
+
+Les éditeurs construits sur Electron définissent `ELECTRON_RUN_AS_NODE=1` ; hérité, il fait démarrer l'application comme un simple Node et la fait planter. `scripts/start-electron.cjs` retire cette variable de l'environnement de l'application (utilisé par `npm run dev` et `npm run smoke`).
 
 ## Secrets
 

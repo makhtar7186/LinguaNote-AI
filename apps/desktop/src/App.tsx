@@ -43,6 +43,7 @@ export default function App() {
   const live = useLiveTranscription();
   const liveActive = ["connecting", "live", "reconnecting", "stopping"].includes(live.state.status);
   const liveText = transcriptText(live.state);
+  const [bubbleNotice, setBubbleNotice] = useState("");
   const maxBytes = health?.limits?.max_upload_bytes ?? DEFAULT_MAX_BYTES;
   // The service is the source of truth for supported formats; the fallback only covers "service not reached yet".
   const acceptedExtensions = health?.limits?.extensions.length
@@ -78,6 +79,11 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function showBubble() {
+    const answer = (await window.linguaNote?.bubble?.setVisible(true)) as { ok?: boolean; message?: string } | undefined;
+    setBubbleNotice(answer?.ok === false && answer.message ? answer.message : "");
   }
 
   function chooseFile(selected: File | undefined) {
@@ -120,8 +126,15 @@ export default function App() {
           <span className="brand-mark" aria-hidden="true"><span /></span>
           <span>LinguaNote <b>AI</b></span>
         </a>
-        <div className={`service-pill ${health?.ok ? "online" : "offline"}`}>
-          <span className="status-dot" />{serviceLabel}
+        <div className="topbar-actions">
+          {window.linguaNote?.bubble && (
+            <button className="text-button" onClick={() => void showBubble()} title="Affiche la bulle flottante au-dessus des autres applications">
+              Afficher la bulle
+            </button>
+          )}
+          <div className={`service-pill ${health?.ok ? "online" : "offline"}`}>
+            <span className="status-dot" />{serviceLabel}
+          </div>
         </div>
       </header>
 
@@ -239,7 +252,7 @@ export default function App() {
             <h2>Dictée en direct</h2>
           </div>
           <span className={`local-badge live-status live-${live.state.status}`} role="status">
-            {LIVE_STATUS_LABEL[live.state.status]}
+            {live.state.status === "live" && live.state.paused ? "En pause" : LIVE_STATUS_LABEL[live.state.status]}
           </span>
         </div>
 
@@ -257,9 +270,16 @@ export default function App() {
             </div>
           </div>
           {liveActive ? (
-            <button className="stop-button" onClick={() => void live.stop()} disabled={live.state.status === "stopping"}>
-              <span /> Arrêter
-            </button>
+            <div className="live-controls">
+              {live.state.status === "live" && (
+                <button className="text-button" onClick={() => void (live.state.paused ? live.resume() : live.pause())}>
+                  {live.state.paused ? "Reprendre" : "Pause"}
+                </button>
+              )}
+              <button className="stop-button" onClick={() => void live.stop()} disabled={live.state.status === "stopping"}>
+                <span /> Arrêter
+              </button>
+            </div>
           ) : (
             <button className="record-button" onClick={() => void live.start()} disabled={!live.supported || busy || recording}>
               Démarrer le direct
@@ -287,6 +307,8 @@ export default function App() {
             )}
           </div>
         )}
+
+        {bubbleNotice && <div className="notice error-notice" role="alert">{bubbleNotice}</div>}
 
         {live.state.notices.map((notice, index) => (
           <div key={`${notice.code}-${index}`} className="notice error-notice" role="alert">{notice.message}</div>

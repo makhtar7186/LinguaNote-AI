@@ -9,6 +9,7 @@ export const initialLiveState: LiveState = {
   notices: [],
   lastEventId: 0,
   endReason: null,
+  paused: false,
 };
 
 export type LiveAction = LiveEvent | { type: "reset" };
@@ -36,10 +37,17 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
 
   switch (action.type) {
     case "client_state": {
+      // A new session (seen by every window, not only the one that started it) starts from a clean transcript.
+      if (action.state === "connecting" && ["idle", "ended", "failed"].includes(state.status)) {
+        return { ...initialLiveState, status: "connecting" };
+      }
       // The server's session_ended is the authoritative end; a trailing "idle" must not erase it.
       if (action.state === "idle" && (state.status === "ended" || state.status === "failed")) return state;
-      return { ...state, status: STATUS_BY_CLIENT_STATE[action.state] };
+      const status = STATUS_BY_CLIENT_STATE[action.state];
+      return { ...state, status, paused: status === "live" || status === "reconnecting" ? state.paused : false };
     }
+    case "pause_state":
+      return { ...state, paused: action.paused };
     case "session_started":
       return { ...state, status: state.status === "stopping" ? "stopping" : "live", engine: action.engine ?? state.engine };
     case "partial": {
@@ -73,7 +81,7 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
       return { ...state, notices, status: action.fatal && state.status !== "ended" ? "failed" : state.status };
     }
     case "session_ended":
-      return { ...state, status: "ended", partial: null, endReason: action.reason };
+      return { ...state, status: "ended", partial: null, endReason: action.reason, paused: false };
     default:
       return state;
   }

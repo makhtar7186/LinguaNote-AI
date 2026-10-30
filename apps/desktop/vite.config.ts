@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -21,6 +22,15 @@ export default defineConfig({
   plugins: [react(), productionCsp()],
   // Relative asset URLs are required to load dist/index.html through file://.
   base: "./",
+  build: {
+    rollupOptions: {
+      // Two windows, two pages: the main window and the floating bubble.
+      input: {
+        main: resolve(import.meta.dirname, "index.html"),
+        bubble: resolve(import.meta.dirname, "bubble.html"),
+      },
+    },
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

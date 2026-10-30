@@ -26,6 +26,8 @@ export function parseLiveEvent(value: unknown): LiveEvent | null {
       const state = CLIENT_STATES.find((candidate) => candidate === value.state);
       return state ? { type: "client_state", state } : null;
     }
+    case "pause_state":
+      return typeof value.paused === "boolean" ? { type: "pause_state", paused: value.paused } : null;
     case "session_started": {
       const engine = isRec(value.engine) && isText(value.engine.name)
         ? { name: value.engine.name, model: optString(value.engine.model) ?? "" }

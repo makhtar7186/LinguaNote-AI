@@ -334,3 +334,72 @@ describe("validateAudioChunk and toWebSocketUrl", () => {
     expect(live.toWebSocketUrl("https://example.org/base")).toBe("wss://example.org/api/v1/live");
   });
 });
+
+describe("pause and resume", () => {
+  const activeClient = (options: Record<string, unknown> = {}) => {
+    const harness = setup(options);
+    harness.client.start();
+    harness.socket().open();
+    harness.socket().receive(started());
+    return harness;
+  };
+
+  it("sends a closing silence, then discards microphone audio while paused", () => {
+    const { client, events, socket } = activeClient();
+    client.sendAudio(pcm(1600));
+    expect(client.pause()).toBe(true);
+    const framesAtPause = socket().frames();
+    // 1 audio frame + 0.9 s of silence = 28 800 bytes
+    expect(framesAtPause.map((f) => f.bytes).reduce((a, b) => a + b, 0)).toBe(3200 + 28_800);
+    expect(events.at(-1)).toEqual({ type: "pause_state", paused: true });
+
+    client.sendAudio(pcm(1600)); // dropped, not buffered
+    client.sendAudio(pcm(1600));
+    expect(socket().frames()).toHaveLength(framesAtPause.length);
+  });
+
+  it("resumes with consecutive sequence numbers and reports the state", () => {
+    const { client, events, socket } = activeClient();
+    client.pause();
+    const last = socket().frames().at(-1)!.seq;
+    expect(client.resume()).toBe(true);
+    expect(events.at(-1)).toEqual({ type: "pause_state", paused: false });
+    client.sendAudio(pcm(1600));
+    expect(socket().frames().at(-1)!.seq).toBe(last + 1); // no hole, no reset: the server sees one stream
+  });
+
+  it("only pauses an active session and ignores repeated requests", () => {
+    const idle = setup();
+    expect(idle.client.pause()).toBe(false);
+    expect(idle.client.resume()).toBe(false);
+
+    const { client } = activeClient();
+    expect(client.pause()).toBe(true);
+    expect(client.pause()).toBe(false);
+    expect(client.resume()).toBe(true);
+    expect(client.resume()).toBe(false);
+  });
+
+  it("can still be stopped while paused, and a new session starts unpaused", () => {
+    const { client, states, socket } = activeClient();
+    client.pause();
+    client.stop();
+    expect(socket().json().at(-1)).toEqual({ type: "stop" });
+    socket().receive({ type: "session_ended", event_id: 1, reason: "client_stop", utterances: 0 });
+    expect(states.at(-1)).toBe("ended");
+    client.start();
+    expect(client.paused).toBe(false);
+  });
+
+  it("keeps the pause across a reconnection", () => {
+    const { client, socket } = activeClient();
+    client.pause();
+    socket().drop();
+    vi.advanceTimersByTime(250);
+    socket().open();
+    socket().receive(started({ resumed: true, audio_ack: 0 }));
+    const sentBefore = socket().frames().length;
+    client.sendAudio(pcm(1600));
+    expect(socket().frames()).toHaveLength(sentBefore); // still paused after the session came back
+  });
+});

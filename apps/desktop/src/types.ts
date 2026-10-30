@@ -38,6 +38,7 @@ export type LiveClientState = "idle" | "connecting" | "active" | "reconnecting" 
 /** Validated live events (see src/services/liveEvents.ts). Those with an event_id are de-duplicated by it. */
 export type LiveEvent =
   | { type: "client_state"; state: LiveClientState }
+  | { type: "pause_state"; paused: boolean }
   | { type: "session_started"; resumed: boolean; engine?: { name: string; model: string } }
   | {
     type: "partial"; event_id: number; utterance_id: number; revision: number; text: string;
@@ -81,6 +82,7 @@ export interface LiveState {
   notices: LiveNotice[];
   lastEventId: number;
   endReason: string | null;
+  paused: boolean;
   engine?: { name: string; model: string };
 }
 
@@ -90,14 +92,37 @@ export interface LiveBridge {
   /** Fire and forget: 16 kHz mono PCM s16le. */
   sendAudio: (pcm: Uint8Array) => void;
   stop: () => Promise<unknown>;
+  pause: () => Promise<unknown>;
+  resume: () => Promise<unknown>;
+  /** Current session state, for a window opened or reloaded mid-session. */
+  status: () => Promise<unknown>;
   /** Subscribes to raw events from the main process; returns the unsubscribe function. */
   onEvent: (listener: (event: unknown) => void) => () => void;
+}
+
+export interface BubbleBridge {
+  setExpanded: (expanded: boolean) => Promise<unknown>;
+  setVisible: (visible: boolean) => Promise<unknown>;
+  getState: () => Promise<unknown>;
+  /** Commands from global shortcuts that need the microphone (only a renderer can capture audio). */
+  onCommand: (listener: (command: unknown) => void) => () => void;
+}
+
+export interface ShortcutsBridge {
+  getReport: () => Promise<unknown>;
+}
+
+export interface ShortcutReport {
+  registered: { name: string; accelerator: string }[];
+  failed: { name: string; accelerator: string; reason: string }[];
 }
 
 export interface LinguaNoteBridge {
   health: () => Promise<unknown>;
   transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
   live?: LiveBridge;
+  bubble?: BubbleBridge;
+  shortcuts?: ShortcutsBridge;
 }
 
 declare global {

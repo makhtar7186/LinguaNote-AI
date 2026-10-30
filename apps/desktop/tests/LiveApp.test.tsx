@@ -12,23 +12,40 @@ const health = {
 
 interface Harness {
   emit: (event: unknown) => void;
-  live: { start: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>; onEvent: ReturnType<typeof vi.fn> };
+  command: (command: unknown) => void;
+  live: {
+    start: ReturnType<typeof vi.fn>; sendAudio: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; status: ReturnType<typeof vi.fn>;
+    onEvent: ReturnType<typeof vi.fn>;
+  };
   unsubscribe: ReturnType<typeof vi.fn>;
   micStop: ReturnType<typeof vi.fn>;
   pushFrame: (bytes?: number) => void;
 }
 
-function install(overrides: { start?: ReturnType<typeof vi.fn>; withLive?: boolean } = {}): Harness {
+function install(
+  overrides: { start?: ReturnType<typeof vi.fn>; withLive?: boolean; status?: unknown } = {},
+): Harness {
   let listener: (event: unknown) => void = () => {};
+  let commandListener: (command: unknown) => void = () => {};
   const unsubscribe = vi.fn();
   const live = {
     start: overrides.start ?? vi.fn().mockResolvedValue({ ok: true }),
     sendAudio: vi.fn(),
     stop: vi.fn().mockResolvedValue({ ok: true }),
+    pause: vi.fn().mockResolvedValue({ ok: true }),
+    resume: vi.fn().mockResolvedValue({ ok: true }),
+    status: vi.fn().mockResolvedValue(overrides.status ?? { ok: true, state: "idle", paused: false }),
     onEvent: vi.fn((callback: (event: unknown) => void) => { listener = callback; return unsubscribe; }),
   };
   window.linguaNote = {
-    health: vi.fn().mockResolvedValue(health), transcribe: vi.fn(), ...(overrides.withLive === false ? {} : { live }),
+    health: vi.fn().mockResolvedValue(health), transcribe: vi.fn(),
+    ...(overrides.withLive === false ? {} : { live }),
+    bubble: {
+      setExpanded: vi.fn().mockResolvedValue({ ok: true }), setVisible: vi.fn().mockResolvedValue({ ok: true, visible: true }),
+      getState: vi.fn(), onCommand: vi.fn((callback: (command: unknown) => void) => { commandListener = callback; return vi.fn(); }),
+    },
+    shortcuts: { getReport: vi.fn().mockResolvedValue({ registered: [], failed: [] }) },
   } as unknown as Window["linguaNote"];
 
   const micStop = vi.fn();
@@ -38,7 +55,8 @@ function install(overrides: { start?: ReturnType<typeof vi.fn>; withLive?: boole
     return { stop: micStop };
   });
   return {
-    emit: (event) => act(() => listener(event)), live, unsubscribe, micStop,
+    emit: (event) => act(() => listener(event)), command: (command) => act(() => commandListener(command)),
+    live, unsubscribe, micStop,
     pushFrame: (bytes = 3200) => onFrame(new Uint8Array(bytes)),
   };
 }
@@ -116,7 +134,8 @@ describe("live panel", () => {
     harness.emit(final(1, "Au revoir", 1));
     harness.emit({ type: "session_ended", event_id: 2, reason: "client_stop", utterances: 1 });
     expect(await screen.findByText(/Session terminée \(arrêt demandé\)/)).toBeTruthy();
-    expect(harness.unsubscribe).toHaveBeenCalled();
+    // Still listening: another window may start the next session.
+    expect(harness.unsubscribe).not.toHaveBeenCalled();
   });
 
   it("does not open a session when the microphone is refused", async () => {
@@ -137,7 +156,6 @@ describe("live panel", () => {
     fireEvent.click(screen.getByText("Démarrer le direct"));
     expect((await screen.findByRole("alert")).textContent).toBe("Service absent.");
     expect(harness.micStop).toHaveBeenCalled();
-    expect(harness.unsubscribe).toHaveBeenCalled();
   });
 
   it("releases the microphone on a fatal error from the service", async () => {
@@ -183,5 +201,85 @@ describe("live panel", () => {
     view.unmount();
     expect(harness.micStop).toHaveBeenCalled();
     expect(harness.unsubscribe).toHaveBeenCalled();
+  });
+
+  it("pause releases the microphone and resume takes it back", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    harness.emit({ type: "client_state", state: "active" });
+
+    fireEvent.click(await screen.findByText("Pause"));
+    expect(harness.live.pause).toHaveBeenCalledOnce();
+    harness.emit({ type: "pause_state", paused: true });
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalledOnce()); // the device is released while paused
+    expect(screen.getAllByText("En pause").length).toBeGreaterThan(0);
+
+    vi.mocked(startMicCapture).mockClear();
+    fireEvent.click(await screen.findByText("Reprendre"));
+    expect(harness.live.resume).toHaveBeenCalledOnce();
+    harness.emit({ type: "pause_state", paused: false });
+    await waitFor(() => expect(startMicCapture).toHaveBeenCalledOnce()); // and re-acquired on resume
+  });
+
+  it("mirrors a session started from another window without opening the microphone", async () => {
+    const harness = install({ status: { ok: true, state: "active", paused: true } });
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    await waitFor(() => expect(screen.getAllByText("En pause").length).toBeGreaterThan(0)); // synced at load
+    harness.emit(final(1, "dicté depuis la bulle", 1));
+    expect(await screen.findByText(/dicté depuis la bulle/)).toBeTruthy();
+    expect(startMicCapture).not.toHaveBeenCalled(); // this window is not the one capturing
+  });
+
+  it("can stop a session that another window started", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    harness.emit({ type: "client_state", state: "connecting" });
+    harness.emit({ type: "client_state", state: "active" });
+    fireEvent.click(await screen.findByText("Arrêter"));
+    await waitFor(() => expect(harness.live.stop).toHaveBeenCalledOnce());
+    expect(harness.micStop).not.toHaveBeenCalled(); // there was no local capture to release
+  });
+
+  it("does not start a second session when another window already runs one", async () => {
+    const harness = install({
+      start: vi.fn().mockResolvedValue({ ok: false, code: "already_running", message: "Une session en direct est déjà en cours." }),
+    });
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    harness.live.status.mockResolvedValue({ ok: true, state: "active", paused: false });
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    await waitFor(() => expect(harness.micStop).toHaveBeenCalled()); // the microphone it opened is released
+    expect(screen.queryByRole("alert")).toBeNull(); // not an error: it simply mirrors the running session
+    await waitFor(() => expect(screen.getAllByText("En direct").length).toBeGreaterThan(0));
+  });
+
+  it("ends a session it owns when its window goes away, so no session runs without a microphone", async () => {
+    const harness = install();
+    const view = render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(harness.live.start).toHaveBeenCalled());
+    view.unmount();
+    expect(harness.live.stop).toHaveBeenCalled();
+    expect(harness.unsubscribe).toHaveBeenCalled();
+  });
+
+  it("offers to show the floating bubble and reports a refusal", async () => {
+    const harness = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    const setVisible = window.linguaNote!.bubble!.setVisible as ReturnType<typeof vi.fn>;
+    fireEvent.click(screen.getByText("Afficher la bulle"));
+    await waitFor(() => expect(setVisible).toHaveBeenCalledWith(true));
+    expect(harness.live.start).not.toHaveBeenCalled();
+    setVisible.mockResolvedValueOnce({ ok: false, message: "Impossible pour le moment." });
+    fireEvent.click(screen.getByText("Afficher la bulle"));
+    expect((await screen.findByRole("alert")).textContent).toBe("Impossible pour le moment.");
   });
 });

@@ -7,6 +7,9 @@ const SAMPLE_RATE = 16_000;
 const SEQ_BYTES = 4;
 const MAX_FRAME_BYTES = 32_000; // 1 s; the server accepts up to 64 KiB
 const MAX_CHUNK_BYTES = 1_000_000; // largest chunk the renderer may hand over in one IPC message
+// Sent when pausing so the service sees a pause longer than its end-of-utterance silence (0.7 s) and finalises
+// the sentence in progress instead of leaving it dangling until the user resumes.
+const PAUSE_SILENCE_BYTES = 28_800; // 0.9 s of digital silence
 
 const DEFAULT_OPTIONS = {
   maxBufferedSeconds: 30, // unacknowledged audio kept for replay after a reconnection
@@ -64,6 +67,7 @@ class LiveClient {
     this.unacked = []; // [{seq, data}] in order
     this.unackedBytes = 0;
     this.stopRequested = false;
+    this.paused = false;
     this.attempt = 0;
     this.disconnectedAt = null;
     this.audioLost = false;
@@ -91,7 +95,11 @@ class LiveClient {
   /** Queues PCM s16le mono 16 kHz. Safe to call while connecting or reconnecting: nothing is lost unless the buffer overflows. */
   sendAudio(bytes) {
     validateAudioChunk(bytes);
-    if (["idle", "ended", "failed"].includes(this.state) || this.stopRequested) return;
+    if (["idle", "ended", "failed"].includes(this.state) || this.stopRequested || this.paused) return;
+    this.#enqueue(bytes);
+  }
+
+  #enqueue(bytes) {
     for (let offset = 0; offset < bytes.byteLength; offset += MAX_FRAME_BYTES) {
       const data = bytes.slice(offset, Math.min(offset + MAX_FRAME_BYTES, bytes.byteLength));
       const entry = { seq: ++this.seq, data };
@@ -100,6 +108,26 @@ class LiveClient {
       this.#enforceBufferLimit();
       if (this.state === "active") this.#sendFrame(entry);
     }
+  }
+
+  /**
+   * Pauses dictation: microphone audio is discarded (not buffered) until resume(). The session stays open and the
+   * keep-alive pings continue. A short silence is sent first so the sentence in progress is finalised.
+   * Only valid while active; returns whether the state changed.
+   */
+  pause() {
+    if (this.state !== "active" || this.paused) return false;
+    this.#enqueue(new Uint8Array(PAUSE_SILENCE_BYTES));
+    this.paused = true;
+    this.onEvent({ type: "pause_state", paused: true });
+    return true;
+  }
+
+  resume() {
+    if (!this.paused) return false;
+    this.paused = false;
+    if (this.state !== "idle") this.onEvent({ type: "pause_state", paused: false });
+    return true;
   }
 
   /** Asks the server to finish: the remaining speech is finalised, then session_ended arrives. */

@@ -19,7 +19,7 @@ export default tseslint.config(
   },
   {
     // Electron main process and preload: CommonJS on Node.
-    files: ["electron/**/*.cjs"],
+    files: ["electron/**/*.cjs", "scripts/**/*.cjs"],
     languageOptions: { sourceType: "commonjs", globals: globals.node },
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },

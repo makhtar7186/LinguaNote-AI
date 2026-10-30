@@ -1,10 +1,20 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// A listener subscription on one fixed channel; returns the function that removes it.
+function subscribe(channel, listener) {
+  if (typeof listener !== "function") return () => {};
+  const handler = (_event, payload) => listener(payload);
+  ipcRenderer.on(channel, handler);
+  return () => ipcRenderer.removeListener(channel, handler);
+}
+
+// Every call below maps to one fixed channel validated by the main process; nothing is forwarded blindly.
 contextBridge.exposeInMainWorld("linguaNote", {
   health: () => ipcRenderer.invoke("linguanote:health"),
   transcribe: (payload) => ipcRenderer.invoke("linguanote:transcribe", payload),
-  // Live transcription. The main process owns the connection and the secret; the renderer only
-  // hands over audio and receives events. Each call below is a fixed channel, nothing is forwarded blindly.
+
+  // Live dictation. The main process owns the connection and the secret; the renderer only hands over
+  // audio and receives events (every window receives them: the bubble and the main window mirror each other).
   live: {
     start: () => ipcRenderer.invoke("linguanote:live:start"),
     sendAudio: (pcm) => {
@@ -12,11 +22,22 @@ contextBridge.exposeInMainWorld("linguaNote", {
       if (ArrayBuffer.isView(pcm)) ipcRenderer.send("linguanote:live:audio", pcm);
     },
     stop: () => ipcRenderer.invoke("linguanote:live:stop"),
-    onEvent: (listener) => {
-      if (typeof listener !== "function") return () => {};
-      const handler = (_event, payload) => listener(payload);
-      ipcRenderer.on("linguanote:live:event", handler);
-      return () => ipcRenderer.removeListener("linguanote:live:event", handler);
-    },
+    pause: () => ipcRenderer.invoke("linguanote:live:pause"),
+    resume: () => ipcRenderer.invoke("linguanote:live:resume"),
+    status: () => ipcRenderer.invoke("linguanote:live:status"),
+    onEvent: (listener) => subscribe("linguanote:live:event", listener),
+  },
+
+  // The floating bubble.
+  bubble: {
+    setExpanded: (value) => ipcRenderer.invoke("linguanote:bubble:setExpanded", value === true),
+    setVisible: (value) => ipcRenderer.invoke("linguanote:bubble:setVisible", value === true),
+    getState: () => ipcRenderer.invoke("linguanote:bubble:state"),
+    // Commands from global shortcuts that need the microphone (only the renderer can capture audio).
+    onCommand: (listener) => subscribe("linguanote:command", listener),
+  },
+
+  shortcuts: {
+    getReport: () => ipcRenderer.invoke("linguanote:shortcuts:get"),
   },
 });
