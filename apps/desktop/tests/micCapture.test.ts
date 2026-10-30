@@ -58,6 +58,23 @@ describe("startMicCapture", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  it("releases the microphone even if a node throws while disconnecting, and stop is idempotent", async () => {
+    const { tracks, close, nodes } = installAudio();
+    const capture = await startMicCapture(() => undefined);
+    nodes.source.disconnect.mockImplementation(() => { throw new Error("already disconnected"); });
+    expect(() => capture.stop()).not.toThrow();
+    capture.stop(); // a second call (e.g. unmount after the stop button) does nothing
+    expect(tracks.every((t) => t.stop.mock.calls.length === 1)).toBe(true);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("cleans up when the audio context itself cannot be created", async () => {
+    const { tracks } = installAudio();
+    vi.stubGlobal("AudioContext", class { constructor() { throw new Error("no audio device"); } });
+    await expect(startMicCapture(() => undefined)).rejects.toThrow("no audio device");
+    expect(tracks.every((t) => t.stop.mock.calls.length === 1)).toBe(true);
+  });
+
   it("reports an environment without microphone access", async () => {
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
     await expect(startMicCapture(() => undefined)).rejects.toThrow(/microphone/);

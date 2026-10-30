@@ -319,3 +319,98 @@ def test_only_the_latest_connection_is_current():
         session.discard()
 
     asyncio.run(scenario())
+
+
+def test_replaying_thirty_seconds_of_audio_after_a_reconnection_is_not_a_flood():
+    async def scenario():
+        session = LiveSession("s", FakeEngine(), LIMITS)
+        piece = silence(0.02)
+        for seq in range(1, 1501):  # 30 s of 20 ms frames in one burst: the worst legitimate replay
+            assert session.accept_frame(seq, piece) is FrameResult.ACCEPTED
+        assert not session.ended
+        session.discard()
+
+    asyncio.run(scenario())
+
+
+def test_ordering_holds_across_forced_cuts():
+    async def scenario():
+        config = SegmenterConfig(partial_interval_seconds=0.5)
+        session = LiveSession("s", FakeEngine(delay=0.01), LIMITS, segmenter_config=config)
+        await feed(session, tone(40.0), step=0.5)  # continuous speech: several forced cuts
+        session.end("client_stop")
+        await until(lambda: session.ended)
+        ids = [e["utterance_id"] for e in session.events if e["type"] in ("partial", "final")]
+        finals = [e["utterance_id"] for e in session.events if e["type"] == "final"]
+        assert ids == sorted(ids)
+        assert len(finals) >= 3 and finals == sorted(set(finals))
+
+    asyncio.run(scenario())
+
+
+def test_ordering_holds_when_inferences_time_out():
+    async def scenario():
+        limits = LiveLimits(3600, 30, 30, job_timeout_seconds=0.05)
+        config = SegmenterConfig(partial_interval_seconds=0.5)
+        session = LiveSession("s", FakeEngine(delay=0.2), limits, segmenter_config=config)
+        seq = 1
+        for _ in range(3):
+            seq = await feed(session, tone(1.5) + silence(1.0), seq)
+        session.end("client_stop")
+        await until(lambda: session.ended, timeout=15)
+        ids = [e["utterance_id"] for e in session.events if "utterance_id" in e]
+        assert ids == sorted(ids)
+        assert all(e["code"] == "inference_timeout" for e in session.events if e["type"] == "error")
+        assert not [e for e in session.events if e["type"] == "final"]  # a timed-out utterance never half-succeeds
+
+    asyncio.run(scenario())
+
+
+# --- decisions of a connection handler (app/api/live.py) -----------------------------------------------------
+# Through the real socket, taking a session over wakes the old connection's event pump, which cancels its
+# receive loop at once, so these races cannot be provoked from outside. The two decisions are therefore
+# isolated functions and tested directly.
+
+def test_only_the_owning_connection_may_end_the_session_on_an_idle_timeout():
+    from app.api.live import handle_idle_timeout
+
+    async def scenario():
+        session = LiveSession("s", FakeEngine(), LIMITS)
+        old = session.attach()
+        new = session.attach()
+        assert handle_idle_timeout(session, old) == "superseded"
+        assert not session.ended  # the replaced connection going quiet did not end the resumed session
+        assert handle_idle_timeout(session, new) == "idle"
+        await until(lambda: session.ended)
+        assert session.events[-1]["reason"] == "idle_timeout"
+
+    asyncio.run(scenario())
+
+
+def test_a_replaced_connection_cannot_delete_or_detach_the_resumed_session():
+    from app.api.live import release_connection
+
+    async def scenario():
+        manager = LiveManager(LIMITS)
+        session = manager.create(FakeEngine())
+        old = session.attach()
+        new = session.attach()  # resume from a new connection
+
+        session.end("client_stop")
+        await until(lambda: session.ended)
+        release_connection(session, manager, old)  # the old handler finishing late
+        assert manager.get(session.session_id) is session and session.events  # still there, still readable
+
+        release_connection(session, manager, new)  # the owner releases a finished session
+        assert manager.get(session.session_id) is None
+
+        other = manager.create(FakeEngine())
+        stale = other.attach()
+        current = other.attach()
+        release_connection(other, manager, stale)
+        assert other.detached_at is None  # not detached by the stale handler
+        release_connection(other, manager, current)
+        assert other.detached_at is not None and manager.get(other.session_id) is other  # kept for resume
+        manager.shutdown()
+
+    asyncio.run(scenario())

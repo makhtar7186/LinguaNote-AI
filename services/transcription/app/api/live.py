@@ -53,6 +53,33 @@ async def _reject(connection: _Connection, code: str, message: str, close_code: 
         pass  # the client is already gone
 
 
+def handle_idle_timeout(session: LiveSession, generation: int) -> str:
+    """The receive loop of one connection saw no message for too long.
+
+    Only the connection that owns the session may end it: a replaced one going quiet says nothing
+    about a session that a newer connection is actively using.
+    """
+    if not session.is_current(generation):
+        return "superseded"
+    session.end("idle_timeout")
+    return "idle"
+
+
+def release_connection(session: LiveSession, manager: LiveManager, generation: int) -> None:
+    """Final state change of a connection handler (synchronous, so a cancellation cannot cut it short).
+
+    A replaced connection leaves the session to its successor; otherwise it could delete a session that
+    was just resumed. The owner either removes a finished session or keeps an unfinished one for resume.
+    """
+    if not session.is_current(generation):
+        return
+    if session.ended:
+        logger.info("Live session over reason=%s utterances=%d", session.end_reason, session.final_count)
+        manager.remove(session.session_id)
+    else:
+        session.detach(generation)  # kept for LINGUANOTE_LIVE_RESUME_SECONDS
+
+
 def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
     router = APIRouter()
 
@@ -146,6 +173,8 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                     await _reject(connection, "resume_gap", "Events were lost while the connection was slow.")
                     return
                 for event in batch:
+                    if not session.is_current(generation):
+                        return  # replaced while a batch was being sent: stop before the next event
                     await connection.send(event)
                     sent = event["event_id"]
                 if session.ended and not batch:
@@ -158,8 +187,7 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                 try:
                     message = await asyncio.wait_for(websocket.receive(), limits.idle_timeout_seconds)
                 except TimeoutError:
-                    session.end("idle_timeout")
-                    return "idle"
+                    return handle_idle_timeout(session, generation)
                 if message["type"] == "websocket.disconnect":
                     return "disconnect"
                 if not session.is_current(generation):
@@ -219,11 +247,7 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
         finally:
             # Session state first and synchronously: a cancellation (server shutdown) must not be able to
             # leave the session attached to a connection that no longer exists.
-            if session.ended:
-                logger.info("Live session over reason=%s utterances=%d", session.end_reason, session.final_count)
-                manager.remove(session.session_id)
-            else:
-                session.detach(generation)  # kept for LINGUANOTE_LIVE_RESUME_SECONDS
+            release_connection(session, manager, generation)
             for task in (pump_task, receive_task):
                 if not task.done():
                     task.cancel()

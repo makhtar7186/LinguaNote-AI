@@ -38,15 +38,27 @@ export async function startMicCapture(onFrame: (pcm: Uint8Array) => void): Promi
     silent.connect(context.destination);
 
     const openContext = context;
+    let stopped = false;
     return {
       stop: () => {
+        if (stopped) return; // safe to call from several paths (stop button, error, unmount)
+        stopped = true;
         processor.onaudioprocess = null;
-        source.disconnect();
-        processor.disconnect();
-        silent.disconnect();
-        stream.getTracks().forEach((track) => track.stop());
-        void openContext.close();
-        frames.flush();
+        // One failing step must not leave the microphone open: each release is attempted regardless.
+        for (const release of [
+          () => source.disconnect(),
+          () => processor.disconnect(),
+          () => silent.disconnect(),
+          () => stream.getTracks().forEach((track) => track.stop()),
+          () => void openContext.close(),
+          () => frames.flush(),
+        ]) {
+          try {
+            release();
+          } catch {
+            // Already disconnected or closed.
+          }
+        }
       },
     };
   } catch (error) {
