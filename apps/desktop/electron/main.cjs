@@ -15,7 +15,8 @@ const CSP_DEV = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-sr
 
 let mainWindow;
 let config;
-let backend = null;
+let stopBackend = () => {};
+let quitting = false;
 // "starting" until the Python service answers; "failed" keeps the reason for the status pill.
 let backendState = { status: "starting", message: "Démarrage du service local…" };
 
@@ -24,7 +25,14 @@ async function startBackend() {
     if (launcher.planBackend().mode === "external") {
       config = api.getConfig();
     } else {
-      backend = await launcher.startManagedBackend();
+      const backend = await launcher.startManagedBackend(process.env, {
+        // Registered as soon as the process exists, so quitting during startup still stops it.
+        onSpawn: (stop) => { stopBackend = stop; },
+        isCancelled: () => quitting,
+        onUnexpectedExit: () => {
+          backendState = { status: "failed", message: "Le service local s'est arrêté de façon inattendue. Relancez l'application." };
+        },
+      });
       config = { base: backend.base, token: backend.token };
     }
     backendState = { status: "ready" };
@@ -117,4 +125,7 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("will-quit", () => { backend?.stop(); });
+app.on("will-quit", () => {
+  quitting = true;
+  stopBackend();
+});

@@ -4,7 +4,7 @@
 
 Implémenté : transcription de fichiers et d'enregistrements micro courts, client Electron/React, service FastAPI, moteur faster-whisper. Non implémenté : flux temps réel, bulle flottante, audio système, persistance, export. Voir [roadmap.md](roadmap.md). Les modèles ne sont pas dans le dépôt ; leur téléchargement se produit à la première transcription (voir [security.md](security.md)).
 
-Organisation du service (`services/transcription/app`) : `config.py` (variables d'environnement), `api/routes.py` (routes), `audio/convert.py` (FFmpeg et validation, sans reconnaissance), `engines/` (interface `SpeechEngine`, capacités, adaptateurs, `registry.py` qui charge un seul modèle sous verrou), `schemas/` (Pydantic), `errors.py` (erreurs à code stable). Côté desktop (`apps/desktop`) : `electron/api-client.cjs` (client du backend, validation IPC, délais), `electron/main.cjs` (fenêtre, permissions, CSP), `src/services/` (validation des réponses), `src/hooks/useRecorder.ts` (micro), `src/App.tsx` (présentation).
+Organisation du service (`services/transcription/app`) : `main.py` (fabrique `create_app`, authentification par jeton, CORS, hôtes de confiance), `config.py` (variables d'environnement, validation au démarrage), `security.py` (limite de corps avant lecture multipart), `api/routes.py` (routes, admission bornée, worker d'inférence unique avec délai), `audio/convert.py` (FFmpeg et validation, sans reconnaissance), `engines/` (interface `SpeechEngine`, capacités, adaptateurs, `registry.py` qui charge un seul modèle sous verrou), `schemas/` (Pydantic), `errors.py` (erreurs à code stable), `mcp_server.py` (pont MCP local). Côté desktop (`apps/desktop`) : `electron/backend-launcher.cjs` (démarre et arrête le service : port libre, jeton éphémère, nouvelle tentative si le port est pris), `electron/api-client.cjs` (client du backend, validation IPC, délais, limites lues dans `/health`), `electron/main.cjs` (fenêtre, permissions, CSP, cycle de vie du service), `src/services/` (validation des réponses), `src/hooks/useRecorder.ts` (micro), `src/App.tsx` (présentation).
 
 ## Architecture cible du prototype
 
@@ -26,7 +26,9 @@ API locale FastAPI ── validation / limites / cycle de requête
 
 Le backend Python est l’unique propriétaire du traitement audio et de l’inférence. L’API accepte un fichier, contrôle le type et la taille, prépare un fichier temporaire dans un emplacement dédié, lance l’orchestration et supprime les temporaires en succès comme en erreur. Les chemins transmis par le client ne doivent jamais déterminer les chemins d’écriture. Le service écoute uniquement sur loopback pour ce prototype.
 
-Electron/React sera un client local séparé lors d’un jalon ultérieur. Il appellera l’API, sans importer de modèles ni traiter l’audio. Sa configuration de sécurité devra suivre les recommandations Electron : isolation de contexte, sandbox renderer, API preload minimale et validation des IPC.
+Electron/React est le client local (implémenté). Il appelle l’API, sans importer de modèles ni traiter l’audio, et possède le processus du service : il le lance avec un jeton aléatoire par session sur un port libre, puis l'arrête à la fermeture. Sa configuration de sécurité suit les recommandations Electron : isolation de contexte, sandbox renderer, API preload minimale et validation des IPC.
+
+Limite connue : si le service s'arrête de façon inattendue, l'application l'indique mais ne le redémarre pas automatiquement.
 
 ## Contrat de transcription
 
@@ -60,8 +62,8 @@ Comparer deux pistes sans présumer du résultat : un moteur multilingue génér
 
 ## Décisions encore ouvertes
 
-- Taille maximale des fichiers et durée maximale du prototype.
+- Taille et durée maximales : décidées pour le prototype (50 Mio, 600 s par défaut, abaissées par moteur) ; à réviser après la phase 1.
 - Modèle(s) à télécharger après vérification des ressources machine.
-- API locale lancée par l’application ou service lancé séparément en développement.
+- (Tranché) L'API locale est lancée par l'application Electron ; un service lancé séparément reste possible en développement, avec jeton obligatoire.
 - Corpus de référence, droits d’usage et critères d’acceptation pour chaque langue.
 - Stratégie de code-switching : modèle multilingue seul, détection par régions ou comparaison de plusieurs candidats.

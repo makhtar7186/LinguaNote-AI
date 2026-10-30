@@ -24,7 +24,7 @@ Ne charge aucun modèle et ne télécharge rien.
 }
 ```
 
-`limits.max_audio_seconds` est la limite **effective** : la valeur configurée, abaissée à ce que le moteur choisi peut traiter (Omnilingual : 39 s). Les clients (interface, pont MCP, client Electron) lisent ici la taille maximale et les extensions au lieu de les dupliquer.
+`limits.max_audio_seconds` est la limite **effective** : la valeur configurée, abaissée à ce que le moteur choisi peut traiter (Omnilingual : 39 s). Les clients (interface, pont MCP, client Electron) lisent ici la taille maximale et les extensions au lieu de les dupliquer ; ils ne gardent que des valeurs de repli (50 Mio, extensions usuelles) quand le service est injoignable, et le serveur reste l'autorité finale.
 
 `engine_selected: true` signifie que la dépendance est installée, pas que les poids sont déjà téléchargés. `setup_message` décrit ce qui manque (moteur ou FFmpeg).
 
@@ -66,6 +66,7 @@ Corps : `{ "detail": "<message lisible>", "code": "<code stable>" }`.
 | 415 | `no_audio_stream` | FFmpeg ne trouve aucune piste audio décodable |
 | 415 | `invalid_audio` | WAV intermédiaire invalide ou vide |
 | 422 | (FastAPI) | Requête mal formée (champ `file` absent) ; `detail` est alors une liste |
+| 429 | `busy` | Déjà `LINGUANOTE_MAX_PENDING` transcriptions en cours ou en attente ; réessayer plus tard (le fichier est reçu mais rejeté avant conversion) |
 | 500 | `inference_failed` | Erreur inattendue ; détails dans les journaux, jamais dans la réponse |
 | 503 | `ffmpeg_missing` | FFmpeg introuvable |
 | 503 | `model_unavailable` | Moteur ou modèle non chargeable (dépendance absente, hors-ligne au premier usage) |

@@ -86,6 +86,98 @@ describe("startManagedBackend", () => {
   });
 });
 
+describe("startManagedBackend resilience", () => {
+  const exitedEarly = () => {
+    throw new launcher.BackendStartError("Le service local s'est arrêté pendant son démarrage.", { retryable: true });
+  };
+
+  it("retries on a new port when the process dies while starting (port taken in between)", async () => {
+    const ports = [4001, 4002];
+    const children = [fakeChild(), fakeChild()];
+    const spawn = vi.fn(() => children.shift());
+    const ready = vi.fn()
+      .mockImplementationOnce(async () => exitedEarly())
+      .mockResolvedValueOnce(undefined);
+    const backend = await launcher.startManagedBackend({}, {
+      spawn, portFinder: async () => ports.shift(), ready, killTree: vi.fn(),
+    });
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(backend.base).toBe("http://127.0.0.1:4002");
+  });
+
+  it("does not retry a failure that a new port cannot fix", async () => {
+    const spawn = vi.fn(() => fakeChild());
+    const ready = vi.fn().mockRejectedValue(new launcher.BackendStartError("pas répondu à temps"));
+    await expect(launcher.startManagedBackend({}, {
+      spawn, portFinder: async () => 1, ready, killTree: vi.fn(),
+    })).rejects.toThrow(/pas répondu/);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up after three attempts", async () => {
+    const spawn = vi.fn(() => fakeChild());
+    await expect(launcher.startManagedBackend({}, {
+      spawn, portFinder: async () => 1, ready: async () => exitedEarly(), killTree: vi.fn(),
+    })).rejects.toThrow(/arrêté/);
+    expect(spawn).toHaveBeenCalledTimes(3);
+  });
+
+  it("hands the stop function out before the service is ready, so quitting mid-startup can stop it", async () => {
+    const child = fakeChild();
+    const killTree = vi.fn();
+    let stop: (() => void) | undefined;
+    let release: () => void = () => undefined;
+    const ready = () => new Promise<void>((resolve) => { release = resolve; });
+    const pending = launcher.startManagedBackend({}, {
+      spawn: () => child, portFinder: async () => 1, ready, killTree, onSpawn: (fn: () => void) => { stop = fn; },
+    });
+    await vi.waitFor(() => expect(stop).toBeTypeOf("function"));
+    stop?.();
+    expect(killTree).toHaveBeenCalledWith(child);
+    release();
+    await pending;
+  });
+
+  it("stops immediately and does not retry when the app is already quitting", async () => {
+    const spawn = vi.fn(() => fakeChild());
+    const killTree = vi.fn();
+    await expect(launcher.startManagedBackend({}, {
+      spawn, portFinder: async () => 1, ready: async () => exitedEarly(), killTree, isCancelled: () => true,
+    })).rejects.toThrow();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("reports an unexpected exit after a successful start, but not a requested stop", async () => {
+    const child = fakeChild();
+    const onUnexpectedExit = vi.fn();
+    const backend = await launcher.startManagedBackend({}, {
+      spawn: () => child, portFinder: async () => 1, ready: async () => undefined, killTree: vi.fn(), onUnexpectedExit,
+    });
+    child.emit("exit", 1);
+    expect(onUnexpectedExit).toHaveBeenCalledOnce();
+
+    const second = fakeChild();
+    const onSecond = vi.fn();
+    const requested = await launcher.startManagedBackend({}, {
+      spawn: () => second, portFinder: async () => 1, ready: async () => undefined, killTree: vi.fn(), onUnexpectedExit: onSecond,
+    });
+    requested.stop();
+    second.emit("exit", 0);
+    expect(onSecond).not.toHaveBeenCalled();
+    expect(backend.base).toContain("127.0.0.1");
+  });
+});
+
+describe("redact", () => {
+  it("removes the secret and bounds the length of text shown to the user", () => {
+    const token = "s3cr3t-token";
+    const shown = launcher.redact(`boom ${token} ${"x".repeat(1000)}`, token);
+    expect(shown).not.toContain(token);
+    expect(shown).toContain("***");
+    expect(shown.length).toBeLessThanOrEqual(300);
+  });
+});
+
 describe("waitUntilReady", () => {
   it("polls /health with the token until it answers", async () => {
     const fetchImpl = vi.fn()

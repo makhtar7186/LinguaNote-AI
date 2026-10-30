@@ -27,6 +27,8 @@ class Settings:
     cors_origins: tuple[str, ...]
     api_token: str | None
     allow_no_auth: bool = False
+    # Transcriptions accepted at once (running + waiting); further ones get 429 instead of queueing forever.
+    max_pending_transcriptions: int = 3
 
 
 def load_settings() -> Settings:
@@ -41,6 +43,7 @@ def load_settings() -> Settings:
         cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
         api_token=os.getenv("LINGUANOTE_API_TOKEN") or None,
         allow_no_auth=os.getenv("LINGUANOTE_ALLOW_NO_AUTH") == "1",
+        max_pending_transcriptions=int(os.getenv("LINGUANOTE_MAX_PENDING", "3")),
     )
 
 

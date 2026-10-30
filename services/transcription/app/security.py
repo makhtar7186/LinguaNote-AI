@@ -17,17 +17,21 @@ class BodyLimitMiddleware:
     check inside the route cannot cap what a client makes the server receive.
     """
 
-    def __init__(self, app, max_bytes: int) -> None:
+    def __init__(self, app, max_bytes: int, *, upload_path: str, default_max_bytes: int = 64 * 1024) -> None:
         self.app = app
-        self.max_bytes = max_bytes
+        self.upload_max_bytes = max_bytes
+        self.upload_path = upload_path
+        self.default_max_bytes = default_max_bytes
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        # Only the upload route may carry a large body; every other route gets a small strict cap.
+        limit = self.upload_max_bytes if scope["path"] == self.upload_path else self.default_max_bytes
         declared = dict(scope["headers"]).get(b"content-length", b"")
-        if declared.isdigit() and int(declared) > self.max_bytes:
+        if declared.isdigit() and int(declared) > limit:
             await self._reject(send)
             return
 
@@ -40,7 +44,7 @@ class BodyLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
+                if received > limit:
                     exceeded = True
                     raise _BodyTooLarge
             return message

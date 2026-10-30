@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.routes import build_router
+from app.api.routes import UPLOAD_PATH, build_router
 from app.config import MULTIPART_OVERHEAD_BYTES, Settings, load_settings, validate_settings
 from app.errors import ApiError
 from app.logging_config import configure_logging
@@ -57,6 +57,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Mitigates DNS rebinding: only loopback host names are served.
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
     # Outermost: oversized bodies are refused before authentication or multipart parsing buffer them.
-    app.add_middleware(BodyLimitMiddleware, max_bytes=settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES)
+    app.add_middleware(
+        BodyLimitMiddleware,
+        max_bytes=settings.max_upload_bytes + MULTIPART_OVERHEAD_BYTES,
+        upload_path=UPLOAD_PATH,
+    )
     app.include_router(build_router(settings))
     return app

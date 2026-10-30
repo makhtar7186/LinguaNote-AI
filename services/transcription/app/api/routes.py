@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -18,6 +19,8 @@ from app.errors import ApiError
 from app.schemas.transcription import HealthResponse, Limits, SegmentOut, TranscriptionResponse
 
 logger = logging.getLogger("linguanote.api")
+
+UPLOAD_PATH = "/api/v1/transcriptions"
 
 # One inference at a time: several concurrent Whisper runs would only fight over the CPU cores.
 # A single worker also serialises requests; a timed-out request cancels its job if it has not started.
@@ -82,6 +85,9 @@ def _discard_when_idle(directory: str, future: Future | None) -> None:
 
 def build_router(settings: Settings) -> APIRouter:
     router = APIRouter()
+    # Bounds work in flight (conversion + inference). The single inference worker would otherwise
+    # let any number of already-uploaded files pile up behind it.
+    admission = threading.BoundedSemaphore(max(1, settings.max_pending_transcriptions))
 
     @router.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
@@ -103,11 +109,13 @@ def build_router(settings: Settings) -> APIRouter:
             ),
         )
 
-    @router.post("/api/v1/transcriptions", response_model=TranscriptionResponse)
+    @router.post(UPLOAD_PATH, response_model=TranscriptionResponse)
     def transcribe(file: UploadFile = File(...)) -> TranscriptionResponse:
         extension = Path(file.filename or "").suffix.lower()
         if extension not in SUPPORTED_EXTENSIONS:
             raise ApiError(415, "unsupported_extension", "Unsupported audio/video file extension.")
+        if not admission.acquire(blocking=False):
+            raise ApiError(429, "busy", "The service is already processing other transcriptions. Retry shortly.")
         started = time.perf_counter()
         temp_dir = tempfile.mkdtemp(prefix="linguanote-")
         inference: Future | None = None
@@ -157,5 +165,6 @@ def build_router(settings: Settings) -> APIRouter:
         finally:
             file.file.close()
             _discard_when_idle(temp_dir, inference)
+            admission.release()
 
     return router

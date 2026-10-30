@@ -212,6 +212,33 @@ def test_streamed_oversized_body_is_cut_off(settings):
     assert response.status_code == 413
 
 
+@needs_ffmpeg
+def test_overload_is_rejected_with_429_instead_of_queueing(settings, monkeypatch, tmp_path):
+    import threading
+    import time
+
+    class Slow(FakeEngine):
+        def transcribe(self, audio_path):
+            time.sleep(0.6)
+            return super().transcribe(audio_path)
+
+    monkeypatch.setattr(registry, "_build", lambda _name: Slow())
+    client = client_for(replace(settings, max_pending_transcriptions=1))
+    audio = make_wav(tmp_path / "a.wav").read_bytes()
+    statuses = []
+
+    def attempt():
+        statuses.append(post_file(client, "a.wav", audio).status_code)
+
+    threads = [threading.Thread(target=attempt) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+        time.sleep(0.1)
+    for thread in threads:
+        thread.join()
+    assert sorted(statuses) == [200, 429, 429]
+
+
 def test_health_reports_the_engine_effective_audio_limit(settings):
     omnilingual = replace(settings, engine="omnilingual-ctc", max_audio_seconds=600.0)
     assert client_for(omnilingual).get("/health").json()["limits"]["max_audio_seconds"] == 39.0
