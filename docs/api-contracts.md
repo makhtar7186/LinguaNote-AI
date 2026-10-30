@@ -82,6 +82,10 @@ Le renderer n'appelle jamais le service directement dans l'application packagée
 
 Le renderer revalide la forme des réponses (`src/services/transcriptionClient.ts`).
 
+### Direct via IPC
+
+`window.linguaNote.live` expose `start()` (enveloppe `{ok}` comme ci-dessus), `sendAudio(pcm)` (sans réponse ; PCM s16le 16 kHz mono, nombre d'octets pair, rejeté sinon), `stop()` et `onEvent(listener)` (renvoie la fonction de désabonnement). Le processus principal possède la connexion WebSocket, envoie le jeton, numérote et conserve les trames non acquittées (30 s au maximum, avertissement `audio_buffer_overflow` au-delà), reprend la session après une coupure avec temporisation croissante (250 ms à 4 s, dans la fenêtre de 30 s du serveur), **déduplique** les événements par `event_id` avant de les transmettre, et ajoute des événements locaux : `client_state` (`connecting`, `active`, `reconnecting`, `stopping`, `ended`, `failed`) et des `error` locaux (`service_unavailable`, `session_lost`, `audio_lost`, `audio_buffer_overflow`). Le renderer revalide chaque événement (`src/services/liveEvents.ts`) et applique la réconciliation provisoire/final (`src/services/liveReducer.ts`).
+
 ## Transcription en direct : `WebSocket /api/v1/live` (protocole 1)
 
 Contrat écrit **avant** l'implémentation (phase 2). Il vise à ce qu'une coupure de connexion ne perde ni ne duplique jamais de texte.

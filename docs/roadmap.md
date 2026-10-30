@@ -16,9 +16,18 @@ Ordre imposé par [AGENTS.md](../AGENTS.md). Légende : fait = implémenté et t
 
 Prochaine action côté données : réunir 5 à 10 extraits autorisés par catégorie avec transcription de référence validée (un évaluateur wolophone pour le wolof), les placer dans `data/corpus/` avec un `manifest.csv`, puis relancer l'évaluation.
 
-## Phase 2 - Transcription en direct (à faire)
+## Phase 2 - Transcription en direct (implémentée, validée avec la voix de synthèse)
 
-Traitement par blocs (VAD Silero), contrat WebSocket (partiel / final), réconciliation des fenêtres, cycle de vie des sessions. Le contrat sera documenté dans `api-contracts.md` avant l'implémentation.
+| Élément | État |
+| --- | --- |
+| Contrat WebSocket (trames numérotées, accusés, journal d'événements, reprise, limites) | fait : [api-contracts.md](api-contracts.md), écrit avant le code |
+| Découpage en énoncés aux silences, sans recouvrement ni perte d'échantillon de parole | fait : seuil d'énergie fixe (pas le VAD Silero), propriétés testées |
+| Provisoire / final, réconciliation, déduplication des rejeux, cycle de vie des sessions | fait côté serveur, processus principal Electron et renderer |
+| Reprise après coupure (rejeu des événements, renvoi de l'audio non acquitté) | fait : testée en simulation et **vérifiée contre le vrai service avec le vrai modèle** (coupure forcée en cours de diffusion : 3 énoncés, aucun doublon) |
+| Interface : texte définitif et provisoire, état, notices d'erreur, micro libéré à l'arrêt, à l'erreur et à la fermeture | fait (tests de composants) |
+| **Non vérifié** | la fenêtre Electron avec un vrai microphone ; la capture micro (ScriptProcessor, voir dette) ; la qualité sur de la parole réelle, bruitée ou en wolof ; la latence en conditions réelles (inférence sérialisée sur CPU : un énoncé est finalisé après quelques secondes) |
+
+Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé coupé de force après 15 s au point le plus silencieux (un mot peut être divisé) ; un `partial` est abandonné si le worker est occupé ; une seule session à la fois ; langue estimée par énoncé uniquement, sans reconnaissance du code-switching.
 
 ## Phase 3 - Bulle flottante (à faire)
 
@@ -51,7 +60,9 @@ Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un 
 ## Dette connue
 
 - Prettier non configuré (ESLint côté desktop et Ruff côté Python le sont).
-- Une inférence déjà démarrée ne peut pas être annulée ; pas de file d'attente bornée.
+- Une inférence déjà démarrée ne peut pas être annulée.
+- Capture micro du direct via `ScriptProcessorNode` (déprécié mais fonctionnel) ; migration vers un `AudioWorklet` à faire quand l'application packagée pourra être exercée (chargement du module sous `file://` et CSP).
+- Découpage des énoncés par seuil d'énergie fixe ; le VAD Silero (déjà utilisé par Whisper pour filtrer) pourrait servir au découpage.
 - Pas de test Playwright / Electron de bout en bout.
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
 - Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.

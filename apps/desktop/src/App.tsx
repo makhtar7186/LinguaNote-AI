@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLiveTranscription } from "./hooks/useLiveTranscription";
 import { MAX_RECORDING_SECONDS, useRecorder } from "./hooks/useRecorder";
+import { transcriptText } from "./services/liveReducer";
 import { getServiceHealth, transcribeFile } from "./services/transcriptionClient";
 import type { ServiceHealth, TranscriptionResponse } from "./types";
 
@@ -16,6 +18,15 @@ function formatDuration(totalSeconds: number) {
   return totalSeconds >= 60 ? `${Math.round(totalSeconds / 60)} min` : `${Math.round(totalSeconds)} s`;
 }
 
+const LIVE_STATUS_LABEL = {
+  idle: "Prêt", connecting: "Connexion…", live: "En direct", reconnecting: "Reconnexion…",
+  stopping: "Finalisation…", ended: "Terminé", failed: "Interrompu",
+} as const;
+
+const LIVE_END_REASON = {
+  client_stop: "arrêt demandé", idle_timeout: "silence prolongé", max_duration: "durée maximale atteinte", error: "erreur",
+} as const;
+
 function formatBytes(bytes: number) {
   return bytes >= 1024 * 1024
     ? `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
@@ -29,6 +40,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const live = useLiveTranscription();
+  const liveActive = ["connecting", "live", "reconnecting", "stopping"].includes(live.state.status);
+  const liveText = transcriptText(live.state);
   const maxBytes = health?.limits?.max_upload_bytes ?? DEFAULT_MAX_BYTES;
   // The service is the source of truth for supported formats; the fallback only covers "service not reached yet".
   const acceptedExtensions = health?.limits?.extensions.length
@@ -155,7 +169,7 @@ export default function App() {
             event.stopPropagation();
             chooseFile(event.dataTransfer.files[0]);
           }}
-          disabled={busy || recording}
+          disabled={busy || recording || liveActive}
         >
           <span className="upload-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4.5 15v3.25c0 .69.56 1.25 1.25 1.25h12.5c.69 0 1.25-.56 1.25-1.25V15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -192,7 +206,7 @@ export default function App() {
           {recording ? (
             <button className="stop-button" onClick={stopRecording}><span /> Arrêter · {formatTime(elapsed)}</button>
           ) : (
-            <button className="record-button" onClick={beginRecording} disabled={busy}>Enregistrer</button>
+            <button className="record-button" onClick={beginRecording} disabled={busy || liveActive}>Enregistrer</button>
           )}
         </div>
 
@@ -215,6 +229,73 @@ export default function App() {
               {result.timing_available ? " · horodatages disponibles" : " · sans horodatage"}
             </div>
           </section>
+        )}
+      </section>
+
+      <section className="workspace live-workspace" aria-label="Transcription en direct">
+        <div className="workspace-heading">
+          <div>
+            <p className="eyebrow">TRANSCRIPTION EN DIRECT</p>
+            <h2>Dictée en direct</h2>
+          </div>
+          <span className={`local-badge live-status live-${live.state.status}`} role="status">
+            {LIVE_STATUS_LABEL[live.state.status]}
+          </span>
+        </div>
+
+        {!live.supported && (
+          <div className="notice setup-notice" role="status">
+            Le direct nécessite l’application Electron : il n’est pas disponible dans l’aperçu navigateur.
+          </div>
+        )}
+
+        <div className="mic-card live-card">
+          <div className="mic-copy">
+            <div>
+              <strong>{liveActive ? "Écoute en cours" : "Parlez, le texte apparaît pendant que vous parlez"}</strong>
+              <small>Le texte en gris est provisoire et peut changer ; il devient définitif à la fin de la phrase.</small>
+            </div>
+          </div>
+          {liveActive ? (
+            <button className="stop-button" onClick={() => void live.stop()} disabled={live.state.status === "stopping"}>
+              <span /> Arrêter
+            </button>
+          ) : (
+            <button className="record-button" onClick={() => void live.start()} disabled={!live.supported || busy || recording}>
+              Démarrer le direct
+            </button>
+          )}
+        </div>
+
+        {(liveText.final || liveText.provisional || liveActive) && (
+          <div className="result-card live-transcript-card" aria-live="polite">
+            <p className="transcript-text live-transcript">
+              {liveText.final}
+              {liveText.provisional && <span className="live-provisional" data-testid="provisional"> {liveText.provisional}</span>}
+              {!liveText.final && !liveText.provisional && <span className="live-placeholder">Parlez : le texte apparaît ici.</span>}
+            </p>
+            {live.state.status === "reconnecting" && (
+              <div className="result-meta">Connexion au service perdue : reprise automatique, rien n’est perdu tant qu’elle réussit.</div>
+            )}
+            {live.state.status === "ended" && (
+              <div className="result-meta">
+                Session terminée ({LIVE_END_REASON[live.state.endReason as keyof typeof LIVE_END_REASON] ?? "terminée"}) ·{" "}
+                {live.state.finals.length} passage(s)
+                {live.state.engine ? ` · ${live.state.engine.name} ${live.state.engine.model}` : ""} · langue estimée par passage,
+                wolof et phrases mixtes non validés
+              </div>
+            )}
+          </div>
+        )}
+
+        {live.state.notices.map((notice, index) => (
+          <div key={`${notice.code}-${index}`} className="notice error-notice" role="alert">{notice.message}</div>
+        ))}
+
+        {liveText.final && !liveActive && (
+          <button className="text-button" onClick={() => void navigator.clipboard.writeText(liveText.final).catch(() => setError("Copie impossible. Sélectionne le texte pour le copier manuellement."))}>
+            Copier le texte du direct
+          </button>
         )}
       </section>
 

@@ -55,7 +55,7 @@ Les tests Pytest qui convertissent de l'audio exigent FFmpeg ; ils sont ignorés
 
 - Fichier : 50 Mio maximum, audio de 10 minutes maximum par défaut (`LINGUANOTE_MAX_AUDIO_SECONDS`). Le traitement est séquentiel : une transcription à la fois.
 - Moteur : faster-whisper `base`, CPU INT8. La qualité n'a pas été mesurée sur le wolof ni sur le code-switching ; la langue affichée est une estimation du modèle, pas une garantie.
-- Le micro enregistre jusqu'à 5 minutes puis transcrit. Pas de transcription en direct, pas de bulle flottante, pas de capture de l'audio système, pas d'historique ni d'export (phases 2 à 5 de la feuille de route, voir [docs/roadmap.md](docs/roadmap.md)).
+- Deux modes micro : enregistrement jusqu'à 5 minutes puis transcription, et **dictée en direct** dans la fenêtre Electron (texte provisoire en gris, définitif à la fin de la phrase). Le direct découpe l'audio aux silences avec un seuil d'énergie fixe (non adaptatif au bruit), n'a été validé qu'avec de la voix de synthèse FR/EN, et un énoncé très long est coupé à son point le plus silencieux (un mot peut être coupé). Pas de bulle flottante, pas de raccourcis globaux, pas de capture de l'audio système, pas d'historique ni d'export (phases 3 à 5, voir [docs/roadmap.md](docs/roadmap.md)).
 - Le service Python est lancé par Electron depuis l'environnement de développement (`.venv`). Il n'est pas encore embarqué : aucun installateur n'existe (voir « Packaging » dans [docs/roadmap.md](docs/roadmap.md)).
 - Testé uniquement sous Windows 11. Le lanceur a été vérifié contre le vrai service (démarrage, 401 sans jeton, 200 avec jeton, arrêt sans processus orphelin). La fenêtre Electron elle-même n'a pas été ouverte et aucune transcription avec le vrai modèle n'a été exécutée : seuls les tests unitaires, le lint, le typecheck et le build ont été exécutés.
 
@@ -68,6 +68,7 @@ Résumé ; détails dans [docs/security.md](docs/security.md).
 - Les corps de requête trop grands sont refusés (413) avant toute lecture multipart ; une inférence a un délai maximal (504).
 - Electron : `contextIsolation`, `sandbox`, pas de `nodeIntegration`, API preload minimale, messages IPC validés, CSP, micro seul autorisé.
 - Les journaux (`data/logs`) ne contiennent ni audio ni texte transcrit.
+- Direct (WebSocket) : l'en-tête `Origin` est contrôlé (une page web ne peut pas ouvrir la socket), le jeton est envoyé dans le premier message et jamais dans l'URL, et le renderer ne le voit jamais (la connexion appartient au processus principal).
 
 ## Documentation
 

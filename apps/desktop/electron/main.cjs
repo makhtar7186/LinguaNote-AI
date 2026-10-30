@@ -3,6 +3,7 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const api = require("./api-client.cjs");
 const launcher = require("./backend-launcher.cjs");
+const { LiveClient } = require("./live-client.cjs");
 
 const DEV_URL = "http://127.0.0.1:5173";
 const PACKAGED_INDEX = pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).href;
@@ -39,6 +40,13 @@ async function startBackend() {
   } catch (error) {
     backendState = { status: "failed", message: error instanceof Error ? error.message : "Le service local n'a pas démarré." };
   }
+}
+
+let liveClient = null;
+const LIVE_IDLE_STATES = ["idle", "ended", "failed"];
+
+function sendLiveEvent(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("linguanote:live:event", payload);
 }
 
 function backendNotReady() {
@@ -120,6 +128,41 @@ app.whenReady().then(() => {
     return backendNotReady() ?? api.transcribe(config, payload);
   });
 
+  ipcMain.handle("linguanote:live:start", async (event) => {
+    assertTrustedSender(event);
+    const notReady = backendNotReady();
+    if (notReady) return notReady;
+    if (liveClient && !LIVE_IDLE_STATES.includes(liveClient.state)) {
+      return { ok: false, code: "already_running", message: "Une session en direct est déjà en cours." };
+    }
+    liveClient = new LiveClient(config, {
+      onEvent: sendLiveEvent,
+      onState: (state) => sendLiveEvent({ type: "client_state", state }),
+    });
+    try {
+      liveClient.start();
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, code: error.code ?? "unknown", message: error.message };
+    }
+  });
+
+  // Audio is fire-and-forget (many small messages): invalid chunks are dropped, never forwarded.
+  ipcMain.on("linguanote:live:audio", (event, chunk) => {
+    if (!isTrustedSender(event) || !liveClient || !ArrayBuffer.isView(chunk)) return;
+    try {
+      liveClient.sendAudio(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+    } catch {
+      // Malformed audio (odd length, too large): ignored; the session itself is unaffected.
+    }
+  });
+
+  ipcMain.handle("linguanote:live:stop", async (event) => {
+    assertTrustedSender(event);
+    liveClient?.stop();
+    return { ok: true };
+  });
+
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
@@ -127,5 +170,6 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("will-quit", () => {
   quitting = true;
+  liveClient?.close();
   stopBackend();
 });

@@ -8,6 +8,7 @@
 - Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première transcription. Hors-ligne, la transcription échoue avec `model_unavailable`. Il n'y a pas encore de confirmation explicite avant ce téléchargement (limite connue).
 - Les fichiers envoyés sont écrits dans un dossier temporaire (`tempfile.mkdtemp`) supprimé à la fin de la requête, succès ou erreur. Si une inférence dépasse son délai et continue de lire le fichier, la suppression est différée jusqu'à la fin de cette inférence. Une fermeture forcée du processus peut laisser un dossier `linguanote-*` dans le répertoire temporaire de l'utilisateur. Le nom du client n'est jamais utilisé comme chemin.
 - Rien n'est conservé : pas d'historique ni de base de données à ce stade. La rétention et la suppression seront à définir avec SQLite (phase 5).
+- L'interface n'émet plus de requête vers Google Fonts : l'import de polices distantes a été supprimé (polices système de repli), pour tenir la promesse « aucun accès réseau » hors téléchargement du modèle.
 - Les journaux (`data/logs/linguanote.log`, rotation 5 Mio x 3) contiennent des métadonnées (extension, taille, durée audio, moteur, durée de traitement). La langue estimée et la longueur du texte ne sont plus journalisées. Pas d'audio ni de texte transcrit. Pas de purge automatique au-delà de la rotation.
 
 ## Menaces et mesures
@@ -20,6 +21,8 @@
 | Fichier hostile ou énorme | Corps refusé avant l'analyse multipart (en-tête `Content-Length` et comptage du flux), puis extension en liste blanche, 50 Mio, durée max (calculée par moteur), FFmpeg sans shell avec délai, première piste audio uniquement | Limites de ressources FFmpeg (mémoire) |
 | Saturation CPU | Un seul worker d'inférence ; modèle chargé une seule fois ; admission bornée (`429 busy` au-delà de `LINGUANOTE_MAX_PENDING`) ; délai d'inférence (`504 inference_timeout`), les tâches en attente sont annulées | Une inférence déjà démarrée ne peut pas être interrompue (elle se termine en arrière-plan). Le refus 429 intervient après la réception du fichier (borné par la limite de taille), pas avant |
 | Pont MCP redirigé vers un hôte distant | `LINGUANOTE_API_URL` limitée à http loopback ; hôte distant uniquement avec `LINGUANOTE_ALLOW_REMOTE_API=1` et https ; limites lues depuis `/health` | - |
+| WebSocket du direct ouvert depuis une page web (les WebSocket échappent au CORS et au middleware HTTP) | Contrôle de l'en-tête `Origin` (refus 1008), jeton exigé dans le premier message sous 5 s, comparé en temps constant, jamais dans l'URL ni les journaux ; hôtes de confiance (Host) | Le client Electron (Node) n'envoie pas d'`Origin` : un processus local connaissant le jeton reste hors de portée de cette mesure |
+| Fuite du jeton vers le renderer pendant le direct | La connexion appartient au processus principal ; le renderer ne transmet que de l'audio (octets validés) et reçoit des événements validés | - |
 | Renderer compromis | `contextIsolation`, `sandbox`, pas de `nodeIntegration`, preload à deux fonctions, vérification de l'URL de l'émetteur IPC, validation de la charge utile, navigation et `window.open` bloqués | - |
 | Injection de scripts | CSP : stricte dans le build packagé (meta `Content-Security-Policy` plus en-tête de session), assouplie en développement pour Vite | Vérifier le comportement dans l'application packagée |
 | Accès caméra ou écran | Gestionnaires de permission : micro (audio) uniquement, fenêtre principale uniquement | Choix explicite du périphérique |
@@ -27,7 +30,7 @@
 
 ## Enregistrement et consentement
 
-L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateur visible et un compteur dans la fenêtre. Il s'arrête automatiquement après 5 minutes. Pas d'enregistrement caché. Avant d'enregistrer ou de transcrire une conversation impliquant d'autres personnes, l'utilisateur doit obtenir leur consentement selon les règles de protection des données applicables.
+L'enregistrement micro est toujours initié par l'utilisateur, avec un indicateur visible dans la fenêtre. L'enregistrement classique s'arrête après 5 minutes ; le direct s'arrête sur demande, après 30 s sans audio ni ping, ou à la durée maximale de session (`LINGUANOTE_LIVE_MAX_SECONDS`). Le micro est libéré à l'arrêt, en cas d'erreur et à la fermeture de la fenêtre. Pas d'enregistrement caché. Le direct ne conserve ni l'audio ni le texte au-delà de la session : la fenêtre de rejeu (500 événements) et l'énoncé en cours sont effacés à la fin. Avant d'enregistrer ou de transcrire une conversation impliquant d'autres personnes, l'utilisateur doit obtenir leur consentement selon les règles de protection des données applicables.
 
 ## Secrets
 

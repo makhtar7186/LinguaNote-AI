@@ -33,9 +33,71 @@ export interface ServiceHealth {
   code?: string;
 }
 
+export type LiveClientState = "idle" | "connecting" | "active" | "reconnecting" | "stopping" | "ended" | "failed";
+
+/** Validated live events (see src/services/liveEvents.ts). Those with an event_id are de-duplicated by it. */
+export type LiveEvent =
+  | { type: "client_state"; state: LiveClientState }
+  | { type: "session_started"; resumed: boolean; engine?: { name: string; model: string } }
+  | {
+    type: "partial"; event_id: number; utterance_id: number; revision: number; text: string;
+    start_seconds: number; end_seconds: number;
+  }
+  | {
+    type: "final"; event_id: number; utterance_id: number; text: string; start_seconds: number; end_seconds: number;
+    language: string | null; language_probability: number | null;
+  }
+  | { type: "error"; code: string; message: string; fatal: boolean; event_id?: number; utterance_id?: number }
+  | { type: "session_ended"; event_id: number; reason: string; utterances: number };
+
+export interface FinalSegment {
+  utterance_id: number;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  language: string | null;
+  language_probability: number | null;
+}
+
+export interface PartialSegment {
+  utterance_id: number;
+  revision: number;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+}
+
+export interface LiveNotice {
+  code: string;
+  message: string;
+  utterance_id?: number;
+  fatal: boolean;
+}
+
+export interface LiveState {
+  status: "idle" | "connecting" | "live" | "reconnecting" | "stopping" | "ended" | "failed";
+  finals: FinalSegment[];
+  partial: PartialSegment | null;
+  notices: LiveNotice[];
+  lastEventId: number;
+  endReason: string | null;
+  engine?: { name: string; model: string };
+}
+
+export interface LiveBridge {
+  /** Opens a session; resolves to the same `{ok}` envelope as the other bridge calls. */
+  start: () => Promise<unknown>;
+  /** Fire and forget: 16 kHz mono PCM s16le. */
+  sendAudio: (pcm: Uint8Array) => void;
+  stop: () => Promise<unknown>;
+  /** Subscribes to raw events from the main process; returns the unsubscribe function. */
+  onEvent: (listener: (event: unknown) => void) => () => void;
+}
+
 export interface LinguaNoteBridge {
   health: () => Promise<unknown>;
   transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
+  live?: LiveBridge;
 }
 
 declare global {
