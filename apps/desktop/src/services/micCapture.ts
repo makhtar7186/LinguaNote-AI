@@ -19,8 +19,9 @@ export async function startMicCapture(onFrame: (pcm: Uint8Array) => void): Promi
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
   });
+  let context: AudioContext | undefined;
   try {
-    const context = new AudioContext();
+    context = new AudioContext();
     if (context.state === "suspended") await context.resume();
     const source = context.createMediaStreamSource(stream);
     const processor = context.createScriptProcessor(4096, 1, 1);
@@ -36,6 +37,7 @@ export async function startMicCapture(onFrame: (pcm: Uint8Array) => void): Promi
     processor.connect(silent);
     silent.connect(context.destination);
 
+    const openContext = context;
     return {
       stop: () => {
         processor.onaudioprocess = null;
@@ -43,12 +45,14 @@ export async function startMicCapture(onFrame: (pcm: Uint8Array) => void): Promi
         processor.disconnect();
         silent.disconnect();
         stream.getTracks().forEach((track) => track.stop());
-        void context.close();
+        void openContext.close();
         frames.flush();
       },
     };
   } catch (error) {
-    stream.getTracks().forEach((track) => track.stop()); // never leave the microphone open on failure
+    // Never leave the microphone or the audio context open on a partial failure.
+    stream.getTracks().forEach((track) => track.stop());
+    void context?.close();
     throw error;
   }
 }

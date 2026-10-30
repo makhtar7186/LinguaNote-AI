@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 PROTOCOL_VERSION = 1
 SEQ_BYTES = 4  # binary frames: uint32 big-endian sequence number, then PCM
+# Text messages are tiny by design; anything larger is refused before it is parsed.
+MAX_OPENING_TEXT_BYTES = 4096
+MAX_CONTROL_TEXT_BYTES = 256
 
 
 class _Strict(BaseModel):

@@ -33,6 +33,10 @@ class LiveLimits:
     max_frame_bytes: int = 64 * 1024
     event_log_size: int = 500
     max_queued_jobs: int = 8
+    # Frames accepted per window. A legitimate client sends 10 to 50 per second and may replay up to 30 s
+    # of audio after a reconnection; far beyond that is a flood, not audio.
+    max_frames_per_window: int = 5000
+    rate_window_seconds: float = 10.0
 
 
 class FrameResult(Enum):
@@ -77,6 +81,8 @@ class LiveSession:
         self.last_activity = clock()
 
         self._stopping = False
+        self._window_started = clock()
+        self._window_frames = 0
         self._finalized: set[int] = set()
         self._revisions: dict[int, int] = {}
         self._jobs: asyncio.Queue = asyncio.Queue(limits.max_queued_jobs)
@@ -120,7 +126,12 @@ class LiveSession:
         self._connection += 1
         self.detached_at = None
         self.last_activity = self._clock()
+        self._signal.set()  # wakes the previous connection's event pump so it notices it was replaced
         return self._connection
+
+    def is_current(self, connection: int) -> bool:
+        """False once a newer connection has taken the session over: the old one must do nothing more."""
+        return connection == self._connection
 
     def detach(self, connection: int) -> None:
         if connection == self._connection:
@@ -136,6 +147,9 @@ class LiveSession:
 
     def accept_frame(self, seq: int, payload: bytes) -> FrameResult:
         if self.ended or self._stopping:
+            return FrameResult.IGNORED
+        if self._over_rate_limit():
+            self.abort("rate_limited", "Too many audio frames were sent in a short time. The session was stopped.")
             return FrameResult.IGNORED
         if seq <= self.last_seq:
             return FrameResult.DUPLICATE
@@ -154,6 +168,13 @@ class LiveSession:
         if self.segmenter.total_seconds >= self.limits.max_session_seconds:
             self.end("max_duration")
         return FrameResult.ACCEPTED
+
+    def _over_rate_limit(self) -> bool:
+        now = self._clock()
+        if now - self._window_started >= self.limits.rate_window_seconds:
+            self._window_started, self._window_frames = now, 0
+        self._window_frames += 1
+        return self._window_frames > self.limits.max_frames_per_window
 
     def end(self, reason: str) -> None:
         """Finish gracefully: the audio still pending is finalised, then `session_ended` is emitted."""

@@ -264,3 +264,58 @@ def test_manager_allows_one_active_session_and_expires_unresumed_ones():
         manager.shutdown()
 
     asyncio.run(scenario())
+
+
+def test_a_flood_of_frames_is_stopped_explicitly_and_the_window_then_resets():
+    async def scenario():
+        now = [0.0]
+        limits = LiveLimits(3600, 30, 30, 5, max_frames_per_window=5, rate_window_seconds=10)
+        session = LiveSession("s", FakeEngine(), limits, clock=lambda: now[0])
+        piece = silence(0.02)
+        for seq in range(1, 6):
+            assert session.accept_frame(seq, piece) is FrameResult.ACCEPTED
+        assert session.accept_frame(6, piece) is FrameResult.IGNORED  # the sixth frame in the window
+        assert session.ended and session.end_reason == "error"
+        assert session.events[-2]["code"] == "rate_limited" and session.events[-2]["fatal"] is True
+
+        # A new window starts after rate_window_seconds: legitimate steady traffic is never limited.
+        calm = LiveSession("c", FakeEngine(), limits, clock=lambda: now[0])
+        for seq in range(1, 21):
+            now[0] += 3.0
+            assert calm.accept_frame(seq, piece) is FrameResult.ACCEPTED
+        calm.discard()
+
+    asyncio.run(scenario())
+
+
+def test_utterance_ids_never_decrease_in_the_event_log():
+    async def scenario():
+        config = SegmenterConfig(partial_interval_seconds=0.5)
+        session = LiveSession("s", FakeEngine(delay=0.02), LIMITS, segmenter_config=config)
+        seq = 1
+        for _ in range(4):  # four utterances, each long enough to produce partials
+            seq = await feed(session, tone(2.0), seq)
+            await asyncio.sleep(0.05)
+            seq = await feed(session, silence(1.0), seq)
+        session.end("client_stop")
+        await until(lambda: session.ended)
+        ids = [event["utterance_id"] for event in session.events if event["type"] in ("partial", "final")]
+        assert ids == sorted(ids)
+        assert {e["utterance_id"] for e in session.events if e["type"] == "final"} == {1, 2, 3, 4}
+        for utterance in {1, 2, 3, 4}:  # partials come before their final, never after
+            kinds = [e["type"] for e in session.events if e.get("utterance_id") == utterance]
+            assert kinds[-1] == "final" and kinds.count("final") == 1
+
+    asyncio.run(scenario())
+
+
+def test_only_the_latest_connection_is_current():
+    async def scenario():
+        session = LiveSession("s", FakeEngine(), LIMITS)
+        old = session.attach()
+        assert session.is_current(old)
+        new = session.attach()
+        assert not session.is_current(old) and session.is_current(new)
+        session.discard()
+
+    asyncio.run(scenario())

@@ -75,4 +75,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.include_router(build_router(settings))
     app.include_router(build_live_router(settings, live_manager))
+    app.state.live_manager = live_manager  # exposed for diagnostics and tests
     return app

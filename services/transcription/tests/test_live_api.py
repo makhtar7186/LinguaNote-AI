@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 import wave
@@ -199,9 +200,46 @@ def test_duplicate_frames_are_reacknowledged_and_gaps_are_reported():
         ws.send_bytes(frame(3, piece))  # frame 2 is missing
         gap = ws.receive_json()
         assert gap["code"] == "sequence_gap" and gap["expected"] == 2 and gap["fatal"] is False
-        assert ws.receive_json() == {"type": "audio_ack", "seq": 1}
+        # A rejected frame is not acknowledged: the next message is the ack of the frame sent next.
         ws.send_bytes(frame(2, piece))
         assert ws.receive_json() == {"type": "audio_ack", "seq": 2}
+
+
+def test_a_replaced_connection_cannot_feed_or_stop_the_session():
+    client = make_client()
+    manager = client.app.state.live_manager
+    with connect(client) as old, watchdog(old):
+        session_id = start(old)["session_id"]
+        with connect(client) as new, watchdog(new):
+            new.send_json({"type": "resume", "token": TOKEN, "protocol": 1, "session_id": session_id,
+                           "last_event_id": 0})
+            assert new.receive_json()["resumed"] is True
+            old.send_bytes(frame(1, tone(0.1)))  # the old socket is still open on the client's side
+            old.send_json({"type": "stop"})
+            time.sleep(0.3)
+            session = manager.get(session_id)
+            assert session.last_seq == 0 and not session.ended
+            with pytest.raises(WebSocketDisconnect):
+                old.receive_json()  # the server closed it
+            new.send_bytes(frame(1, tone(0.1)))
+            assert new.receive_json() == {"type": "audio_ack", "seq": 1}
+
+
+def test_oversized_or_binary_opening_messages_are_refused():
+    with connect(make_client()) as ws, watchdog(ws):
+        ws.send_text(json.dumps({"type": "start", "token": "x" * 5000, "protocol": 1}))
+        assert ws.receive_json()["code"] == "invalid_message"
+    with connect(make_client()) as ws, watchdog(ws):
+        ws.send_bytes(b"\x00\x01\x02")
+        assert ws.receive_json()["code"] == "invalid_message"
+
+
+def test_an_oversized_control_message_ends_the_session():
+    with connect(make_client()) as ws, watchdog(ws):
+        start(ws)
+        ws.send_text("x" * 300)
+        error = read_until(ws, "error")
+        assert error["code"] == "invalid_message" and error["fatal"] is True
 
 
 @pytest.mark.parametrize("payload, code", [

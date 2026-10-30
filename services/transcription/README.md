@@ -9,7 +9,7 @@ Depuis `services/transcription`, installer l’API et le moteur CPU compatible W
 ```powershell
 python -m pip install -e ".[api,windows-asr,dev]"
 $env:LINGUANOTE_API_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
-python -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8765
+python -m uvicorn --factory app.main:create_app --host 127.0.0.1 --port 8765 --ws-max-size 262144
 ```
 
 Le service **refuse de démarrer sans `LINGUANOTE_API_TOKEN`** (16 caractères minimum). Seul `LINGUANOTE_ALLOW_NO_AUTH=1` désactive l'authentification, pour du développement ponctuel. Toute requête doit porter l'en-tête `X-LinguaNote-Token`, y compris pour ouvrir `/docs` depuis un outil externe. Quand l'application Electron est lancée (`npm run dev`), elle démarre elle-même ce service avec un jeton éphémère sur un port libre : la commande ci-dessus n'est utile que pour développer ou tester l'API seule.

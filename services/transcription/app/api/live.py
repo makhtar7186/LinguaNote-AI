@@ -14,6 +14,8 @@ from app.engines.base import ModelUnavailableError
 from app.engines.registry import get_engine
 from app.live.manager import BusyError, LiveManager
 from app.live.protocol import (
+    MAX_CONTROL_TEXT_BYTES,
+    MAX_OPENING_TEXT_BYTES,
     PROTOCOL_VERSION,
     SEQ_BYTES,
     ControlAdapter,
@@ -68,8 +70,12 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
             return None
         if message["type"] == "websocket.disconnect":
             return None
+        text = message.get("text") or ""
+        if len(text.encode()) > MAX_OPENING_TEXT_BYTES:
+            await _reject(connection, "invalid_message", "Opening message too large.", POLICY_VIOLATION)
+            return None
         try:
-            opening = OpeningMessage.validate_python(json.loads(message.get("text") or ""))
+            opening = OpeningMessage.validate_python(json.loads(text))
         except (ValueError, ValidationError):
             await _reject(connection, "invalid_message", "Invalid opening message.", POLICY_VIOLATION)
             return None
@@ -132,6 +138,8 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
             """Send every logged event the client has not seen yet, in order."""
             sent = last_event_id
             while True:
+                if not session.is_current(generation):
+                    return  # a newer connection resumed the session: this one must send nothing more
                 session.clear_signal()
                 batch = session.events_after(sent)
                 if batch is None:
@@ -154,6 +162,8 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                     return "idle"
                 if message["type"] == "websocket.disconnect":
                     return "disconnect"
+                if not session.is_current(generation):
+                    return "superseded"  # nothing from a replaced connection may reach the session
                 session.touch()
 
                 data = message.get("bytes")
@@ -166,17 +176,23 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                         return "fatal"
                     result = session.accept_frame(int.from_bytes(data[:SEQ_BYTES], "big"), data[SEQ_BYTES:])
                     if result is FrameResult.GAP:
+                        # No acknowledgement for a rejected frame: the client resends from `expected`.
                         await connection.send(transport_error(
                             "sequence_gap", "A frame is missing; resend from the expected sequence number.",
                             fatal=False, expected=session.last_seq + 1,
                         ))
-                    await connection.send({"type": "audio_ack", "seq": session.last_seq})
+                    elif result is not FrameResult.IGNORED:
+                        await connection.send({"type": "audio_ack", "seq": session.last_seq})
                     if session.ended:
                         return "fatal"
                     continue
 
+                text = message.get("text") or ""
+                if len(text.encode()) > MAX_CONTROL_TEXT_BYTES:
+                    session.abort("invalid_message", "Control message too large.")
+                    return "fatal"
                 try:
-                    control = ControlAdapter.validate_python(json.loads(message.get("text") or ""))
+                    control = ControlAdapter.validate_python(json.loads(text))
                 except (ValueError, ValidationError):
                     session.abort("invalid_message", "Unknown or malformed message.")
                     return "fatal"

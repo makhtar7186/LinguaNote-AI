@@ -9,6 +9,8 @@ const POLL_INTERVAL_MS = 400;
 const STDERR_TAIL_LINES = 20;
 const MAX_DETAIL_CHARS = 300;
 const MAX_START_ATTEMPTS = 3;
+// Largest WebSocket message uvicorn will buffer (default 16 MiB). Audio frames are at most 64 KiB.
+const WS_MAX_MESSAGE_BYTES = 256 * 1024;
 const SERVICE_DIR = path.join(__dirname, "..", "..", "..", "services", "transcription");
 
 class BackendStartError extends Error {
@@ -90,7 +92,7 @@ async function startOnce(env, deps) {
 
   const child = spawn(
     python,
-    ["-m", "uvicorn", "--factory", "app.main:create_app", "--host", "127.0.0.1", "--port", String(port)],
+    ["-m", "uvicorn", "--factory", "app.main:create_app", "--host", "127.0.0.1", "--port", String(port), "--ws-max-size", String(WS_MAX_MESSAGE_BYTES)],
     {
       cwd: SERVICE_DIR,
       windowsHide: true,
