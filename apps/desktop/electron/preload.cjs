@@ -31,6 +31,14 @@ contextBridge.exposeInMainWorld("linguaNote", {
     onEvent: (listener) => subscribe("linguanote:live:event", listener),
   },
 
+  // Insert finished text into the application in front (Windows). Opt-in per session; the main process does the work.
+  insertion: {
+    arm: () => ipcRenderer.invoke("linguanote:insertion:arm"),
+    stop: () => ipcRenderer.invoke("linguanote:insertion:stop"),
+    status: () => ipcRenderer.invoke("linguanote:insertion:status"),
+    onStatus: (listener) => subscribe("linguanote:insertion:status", listener),
+  },
+
   // The saved transcriptions (opt-in). Fixed operation names; the main process validates every argument.
   history: {
     getSettings: () => ipcRenderer.invoke("linguanote:history:run", "getSettings"),

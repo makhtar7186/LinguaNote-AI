@@ -179,11 +179,29 @@ export interface HistoryBridge {
   export: (id: string, format: HistoryExportFormat) => Promise<unknown>;
 }
 
+export interface InsertionStatus {
+  supported: boolean;
+  state: "off" | "locking" | "on" | "paused";
+  target: { title: string } | null;
+  pendingChars: number;
+  inserted: number;
+  problem: { code: string; message: string } | null;
+}
+
+export interface InsertionBridge {
+  /** Needs a running live session; after a short countdown the window in front becomes the target. */
+  arm: () => Promise<unknown>;
+  stop: () => Promise<unknown>;
+  status: () => Promise<unknown>;
+  onStatus: (listener: (status: unknown) => void) => () => void;
+}
+
 export interface LinguaNoteBridge {
   health: () => Promise<unknown>;
   transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
   live?: LiveBridge;
   history?: HistoryBridge;
+  insertion?: InsertionBridge;
   bubble?: BubbleBridge;
   capture?: CaptureBridge;
   shortcuts?: ShortcutsBridge;

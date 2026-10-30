@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HistoryPanel } from "./components/HistoryPanel";
+import { InsertionControl } from "./components/InsertionControl";
 import { LevelMeter, SilenceWarning, SourcePicker } from "./components/SourcePicker";
 import { useCapturePreferences, useMicrophones } from "./hooks/useCapturePreferences";
 import { useLiveTranscription } from "./hooks/useLiveTranscription";
@@ -314,6 +315,7 @@ export default function App() {
           </div>
         )}
         {live.silent && live.state.source && <SilenceWarning source={live.state.source} />}
+        <InsertionControl liveActive={liveActive} />
 
         {(liveText.final || liveText.provisional || liveActive) && (
           <div className="result-card live-transcript-card" aria-live="polite">

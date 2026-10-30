@@ -1,4 +1,4 @@
-const { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
+const { app, BrowserWindow, ClipboardItem, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const api = require("./api-client.cjs");
@@ -10,6 +10,9 @@ const { createArmGate } = require("./capture-gate.cjs");
 const { createCapturePlan } = require("./capture-plan.cjs");
 const ipcTrust = require("./ipc-trust.cjs");
 const { LiveClient } = require("./live-client.cjs");
+const { createElectronClipboardPort } = require("./electron-clipboard.cjs");
+const { createTextInserter } = require("./text-inserter.cjs");
+const { createWindowsDesktop } = require("./windows-desktop.cjs");
 const { createPositionStore } = require("./position-store.cjs");
 const { registerShortcuts, resolveAccelerators, unregisterShortcuts } = require("./shortcuts.cjs");
 
@@ -38,6 +41,15 @@ let shortcutReport = { registered: [], failed: [] };
 let backendState = { status: "starting", message: "Démarrage du service local…" };
 
 const ownership = ipcTrust.createOwnership();
+// Insertion into other applications is implemented for Windows only (docs/security.md); elsewhere it reports "unsupported".
+const INSERTION_SUPPORTED = process.platform === "win32";
+const inserter = INSERTION_SUPPORTED
+  ? createTextInserter({
+    clipboard: createElectronClipboardPort({ clipboard, ClipboardItem }),
+    desktop: createWindowsDesktop(),
+    onStatus: (status) => broadcast("linguanote:insertion:status", status),
+  })
+  : null;
 const captureGate = createArmGate();
 // The source a window declared before opening any device (see capture-plan.cjs).
 const capturePlan = createCapturePlan();
@@ -174,9 +186,11 @@ function ensureBubbleVisible() {
 }
 
 function onLiveEvent(payload) {
+  if (inserter && payload.type === "final" && typeof payload.text === "string") inserter.submit(payload.text);
   if (payload.type === "client_state" && payload.state === "connecting") ensureBubbleVisible();
   if (payload.type === "client_state" && LIVE_IDLE_STATES.includes(payload.state)) {
     ownership.release();
+    inserter?.sessionEnded();
     liveSource = null;
     disposeOwnerWatch(); // the session is over: stop watching the window that owned it
     disposeOwnerWatch = () => {};
@@ -233,6 +247,22 @@ function registerIpc() {
   ipcMain.handle("linguanote:transcribe", async (event, payload) => {
     assertTrustedSender(event);
     return backendNotReady() ?? api.transcribe(config, payload);
+  });
+
+  // Insertion into the application in front. Armed by the user, bound to a running session, status always broadcast.
+  ipcMain.handle("linguanote:insertion:arm", async (event) => {
+    assertTrustedSender(event);
+    if (!inserter) return { ok: false, code: "unsupported", message: "L’insertion dans une autre application n’est disponible que sur Windows." };
+    if (!liveActive()) return { ok: false, code: "no_live_session", message: "Démarrez d’abord une dictée en direct." };
+    return inserter.arm();
+  });
+  ipcMain.handle("linguanote:insertion:stop", async (event) => {
+    assertTrustedSender(event);
+    return inserter ? inserter.stop() : { ok: true, dropped: 0 };
+  });
+  ipcMain.handle("linguanote:insertion:status", async (event) => {
+    assertTrustedSender(event);
+    return { supported: Boolean(inserter), ...(inserter ? inserter.status() : { state: "off" }) };
   });
 
   // History: one channel per operation of an allow-list; arguments are validated in history-client.cjs.
@@ -425,7 +455,7 @@ async function runSmokeTest() {
     check("main page rendered with the strict CSP", mainProbe.hasRoot && /default-src 'self'/.test(mainProbe.csp ?? "") && !/unsafe-inline/.test(mainProbe.csp ?? ""), JSON.stringify(mainProbe.csp));
     check("bubble page rendered with the strict CSP", bubbleProbe.hasRoot && bubbleProbe.marker && /default-src 'self'/.test(bubbleProbe.csp ?? "") && !/unsafe-inline/.test(bubbleProbe.csp ?? ""));
     check("renderers have no Node.js (require/process undefined)", [mainProbe, bubbleProbe].every((p) => p.require === "undefined" && p.process === "undefined"));
-    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "history", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
+    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "history", "insertion", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
     check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "prepare", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
     const frameProbe = `new Promise((resolve) => {
@@ -619,6 +649,67 @@ async function runSmokeTest() {
     }
   }
 
+  if (process.env.LINGUANOTE_SMOKE_INSERTION === "1" && backendState.status === "ready" && inserter) {
+    // OPT-IN (it takes the focus and types): a small test window with a text box is opened, insertion is armed while it
+    // is in front, and finalised sentences must arrive in that text box, with the user's clipboard put back afterwards.
+    const os = require("node:os");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "linguanote-insert-"));
+    const readyFile = path.join(tmp, "ready");
+    const doneFile = path.join(tmp, "done");
+    const resultFile = path.join(tmp, "result.txt");
+    const title = "LinguaNote cible de test";
+    const formScript = `
+      Add-Type -AssemblyName System.Windows.Forms
+      $f = New-Object System.Windows.Forms.Form
+      $f.Text = '${title}'; $f.Width = 520; $f.Height = 220; $f.TopMost = $true; $f.StartPosition = 'CenterScreen'
+      $t = New-Object System.Windows.Forms.TextBox
+      $t.Multiline = $true; $t.Dock = 'Fill'; $f.Controls.Add($t)
+      $f.Add_Shown({ $f.Activate(); $t.Focus(); Set-Content -Path '${readyFile}' -Value 'ready' })
+      $timer = New-Object System.Windows.Forms.Timer
+      $timer.Interval = 300
+      $timer.Add_Tick({ if (Test-Path '${doneFile}') { [System.IO.File]::WriteAllText('${resultFile}', $t.Text); $f.Close() } })
+      $timer.Start()
+      [void]$f.ShowDialog()`;
+    const form = require("node:child_process").spawn("powershell.exe", ["-NoProfile", "-Command", formScript], { windowsHide: false, stdio: "ignore" });
+    const waitFile = async (file, ms) => { const end = Date.now() + ms; while (!fs.existsSync(file) && Date.now() < end) await new Promise((r) => setTimeout(r, 200)); return fs.existsSync(file); };
+    const originalClipboard = "PRESSE-PAPIERS DE L'UTILISATEUR";
+    try {
+      const formUp = await waitFile(readyFile, 20000);
+      check("insertion test window opened", formUp);
+      if (formUp) {
+        const startedLive = await run(mainWindow.webContents, "window.linguaNote.live.start()");
+        let active = false;
+        for (let i = 0; i < 900 && !active; i += 1) { active = liveClient?.state === "active"; if (!active) await new Promise((r) => setTimeout(r, 100)); }
+        check("a live session is running for the insertion test", startedLive.ok && active);
+        await clipboard.writeText(originalClipboard);
+        const armedResult = await run(mainWindow.webContents, "window.linguaNote.insertion.arm()");
+        check("insertion can be armed during a live session", armedResult.ok === true, JSON.stringify(armedResult));
+        for (let i = 0; i < 100 && inserter.status().state === "locking"; i += 1) await new Promise((r) => setTimeout(r, 100));
+        const locked = inserter.status();
+        const targetOk = locked.state === "on" && locked.target?.title === title;
+        check("the window in front when the countdown ends is the one locked", targetOk, JSON.stringify(locked));
+        if (targetOk) {
+          inserter.submit("Le train pour Dakar");
+          inserter.submit("part à huit heures.");
+          for (let i = 0; i < 150 && (inserter.status().pendingChars > 0 || inserter.status().inserted === 0); i += 1) await new Promise((r) => setTimeout(r, 100));
+          await new Promise((r) => setTimeout(r, 600));
+          const clipboardAfter = await clipboard.readText();
+          check("the clipboard of the user is back after the insertion", clipboardAfter === originalClipboard, clipboardAfter);
+        } else {
+          inserter.stop(); // never type into a window that is not the test window
+        }
+        await run(mainWindow.webContents, "window.linguaNote.live.stop()");
+      }
+    } finally {
+      fs.writeFileSync(doneFile, "done");
+      await waitFile(resultFile, 10000);
+      const typed = fs.existsSync(resultFile) ? fs.readFileSync(resultFile, "utf8") : null;
+      check("the sentences arrived in the target window, in order, with their accents", typed !== null && typed.replace(/\s+/g, " ").trim() === "Le train pour Dakar part à huit heures.", JSON.stringify(typed));
+      form.kill();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
   // The defaults are registered for real with Electron, then released at once. Another application holding one is a
   // legitimate outcome (reported, not an error); an accelerator Electron rejects as malformed is a real failure.
   const expectedAccelerators = resolveAccelerators();
@@ -714,6 +805,7 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("will-quit", () => {
+  inserter?.stop();
   quitting = true;
   unregisterShortcuts(globalShortcut, shortcutReport.registered);
   liveClient?.close();
