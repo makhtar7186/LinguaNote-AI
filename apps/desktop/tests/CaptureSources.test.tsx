@@ -16,6 +16,7 @@ interface CaptureOptions {
 }
 
 function install({ withCapture = true }: { withCapture?: boolean } = {}) {
+  const capture = { armSystemAudio: vi.fn(), disarm: vi.fn() };
   let listener: (event: unknown) => void = () => {};
   let commandListener: (command: unknown) => void = () => {};
   const live = {
@@ -27,7 +28,7 @@ function install({ withCapture = true }: { withCapture?: boolean } = {}) {
   };
   window.linguaNote = {
     health: vi.fn().mockResolvedValue(health), transcribe: vi.fn(), live,
-    ...(withCapture ? { capture: { armSystemAudio: vi.fn(), disarm: vi.fn() } } : {}),
+    ...(withCapture ? { capture } : {}),
     bubble: {
       setExpanded: vi.fn().mockResolvedValue({ ok: true }), setVisible: vi.fn().mockResolvedValue({ ok: true }), getState: vi.fn(),
       onCommand: vi.fn((callback: (command: unknown) => void) => { commandListener = callback; return vi.fn(); }),
@@ -38,7 +39,7 @@ function install({ withCapture = true }: { withCapture?: boolean } = {}) {
   const micStop = vi.fn();
   vi.mocked(startMicCapture).mockResolvedValue({ stop: micStop });
   return {
-    live, micStop,
+    live, micStop, capture,
     emit: (event: unknown) => act(() => listener(event)),
     command: (command: unknown) => act(() => commandListener(command)),
     options: (call = 0) => vi.mocked(startMicCapture).mock.calls[call][1] as CaptureOptions,
@@ -339,5 +340,46 @@ describe("declaring the source before opening any device", () => {
     await waitFor(() => expect(screen.getByTestId("active-source").textContent).toContain("Microphone + son de l’ordinateur"));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(startMicCapture).not.toHaveBeenCalled();
+  });
+});
+
+describe("withdrawing a declaration that did not become a session", () => {
+  it("disarms when the user stops while the declaration is in flight", async () => {
+    const env = install();
+    let answer: (value: unknown) => void = () => {};
+    env.live.prepare.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.change(sourceSelect(), { target: { value: "system" } });
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(env.live.prepare).toHaveBeenCalled());
+    fireEvent.click(await screen.findByText("Arrêter"));
+    await waitFor(() => expect(env.capture.disarm).toHaveBeenCalled()); // nothing may stay armable after the stop
+    await act(async () => answer({ ok: true }));
+    expect(env.capture.disarm.mock.calls.length).toBeGreaterThanOrEqual(2); // and again once the late answer is discarded
+  });
+
+  it("disarms when opening the devices fails, with the error shown", async () => {
+    const env = install();
+    vi.mocked(startMicCapture).mockRejectedValue(new Error("Le son de l’ordinateur n’a pas pu être capturé."));
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.change(sourceSelect(), { target: { value: "system" } });
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    expect((await screen.findAllByRole("alert"))[0].textContent).toMatch(/n’a pas pu être capturé/);
+    expect(env.capture.disarm).toHaveBeenCalled();
+    expect(env.live.start).not.toHaveBeenCalled();
+  });
+
+  it("disarms on a normal stop too", async () => {
+    const env = install();
+    render(<App />);
+    await screen.findByText(/Moteur configuré/);
+    fireEvent.click(screen.getByText("Démarrer le direct"));
+    await waitFor(() => expect(env.live.start).toHaveBeenCalled());
+    env.emit({ type: "client_state", state: "active" });
+    env.capture.disarm.mockClear();
+    fireEvent.click(await screen.findByText("Arrêter"));
+    await waitFor(() => expect(env.capture.disarm).toHaveBeenCalledOnce());
   });
 });

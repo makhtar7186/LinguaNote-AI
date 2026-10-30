@@ -295,6 +295,10 @@ function registerIpc() {
 
   ipcMain.handle("linguanote:live:stop", async (event) => {
     assertTrustedSender(event);
+    // A stop, whatever the stage, also cancels a declaration that has not become a session yet: no capture of the
+    // computer sound may be armed afterwards on the strength of an intention the user has just withdrawn.
+    capturePlan.clear();
+    captureGate.disarm();
     liveClient?.stop();
     return { ok: true };
   });
@@ -332,6 +336,7 @@ function registerIpc() {
   ipcMain.handle("linguanote:capture:disarm", async (event) => {
     assertTrustedSender(event);
     captureGate.disarm();
+    capturePlan.clear(); // withdrawing the request also withdraws the declaration it relied on
     return { ok: true };
   });
 
@@ -427,6 +432,16 @@ async function runSmokeTest() {
     check("declaring an unknown source is refused, not defaulted", unknown.ok === false && unknown.code === "invalid_source", JSON.stringify(unknown));
     const stillRefused = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
     check("a refused declaration leaves nothing armable", stillRefused.ok === false);
+
+    // Withdrawing the intention (stop, or disarm) must leave nothing armable, even though the plan has 30 s to live.
+    await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'system' })");
+    await run(mainWindow.webContents, "window.linguaNote.live.stop()");
+    const afterStop = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("a stop withdraws the declaration: arming afterwards is refused", afterStop.ok === false && afterStop.code === "not_declared", JSON.stringify(afterStop));
+    await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'system' })");
+    await run(mainWindow.webContents, "window.linguaNote.capture.disarm()");
+    const afterDisarm = await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    check("withdrawing the request also withdraws the declaration", afterDisarm.ok === false && afterDisarm.code === "not_declared", JSON.stringify(afterDisarm));
 
     const declared = await run(mainWindow.webContents, "window.linguaNote.live.prepare({ source: 'system' })");
     check("declaring the computer sound is accepted", declared.ok === true, JSON.stringify(declared));

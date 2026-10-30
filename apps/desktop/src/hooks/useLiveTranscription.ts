@@ -80,6 +80,11 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
     defaultStartRef.current = defaultStart;
   }, [state.status, defaultStart]);
 
+  /** Withdraws a declaration that did not become a session (stop, failure, abort), so nothing can still be armed. */
+  const cancelDeclaration = useCallback(() => {
+    void window.linguaNote?.capture?.disarm?.();
+  }, []);
+
   const releaseMicrophone = useCallback(() => {
     epochRef.current += 1; // invalidates any acquisition still in flight
     acquiringRef.current = null; // ...so a fresh one may begin (resume after a pause) without waiting for it
@@ -206,6 +211,7 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
       }
       if (epochRef.current !== epochBefore) {
         ownerRef.current = false; // stopped while declaring: no device was opened, nothing to undo
+        cancelDeclaration();
         return;
       }
       // Step 2: the sources. If a permission is refused, no session is opened for nothing. Frames captured while
@@ -218,6 +224,7 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
       });
       if (!opened) {
         ownerRef.current = false; // stopped before the devices finished opening: nothing to undo
+        cancelDeclaration();
         return;
       }
       const failure = failureOf(await bridge.start({ source: startOptionsRef.current.source }));
@@ -239,6 +246,7 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
     } catch (cause) {
       releaseMicrophone();
       ownerRef.current = false;
+      cancelDeclaration();
       dispatch({
         type: "error", code: "start_failed", fatal: true,
         message: cause instanceof Error ? cause.message : "Impossible de démarrer la transcription en direct.",
@@ -246,14 +254,15 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
     } finally {
       startingRef.current = false;
     }
-  }, [bridge, acquireMicrophone, releaseMicrophone, syncFromMainProcess]);
+  }, [bridge, acquireMicrophone, releaseMicrophone, syncFromMainProcess, cancelDeclaration]);
 
   const stop = useCallback(async () => {
     if (!bridge) return;
+    cancelDeclaration();
     releaseMicrophone(); // delivers the last partial frame before the stop request
     dispatch({ type: "client_state", state: "stopping" });
     await bridge.stop();
-  }, [bridge, releaseMicrophone]);
+  }, [bridge, releaseMicrophone, cancelDeclaration]);
 
   const pause = useCallback(async () => { await bridge?.pause(); }, [bridge]);
   const resume = useCallback(async () => { await bridge?.resume(); }, [bridge]);
