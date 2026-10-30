@@ -4,13 +4,14 @@ import shutil
 import tempfile
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from importlib.util import find_spec
 from pathlib import Path
 
 from fastapi import APIRouter, File, UploadFile
 
+from app import inference as inference_worker
 from app.audio.convert import convert_to_model_wav, validate_wav
 from app.config import SUPPORTED_EXTENSIONS, Settings
 from app.engines.base import ModelUnavailableError, TranscriptionResult
@@ -21,11 +22,6 @@ from app.schemas.transcription import HealthResponse, Limits, SegmentOut, Transc
 logger = logging.getLogger("linguanote.api")
 
 UPLOAD_PATH = "/api/v1/transcriptions"
-
-# One inference at a time: several concurrent Whisper runs would only fight over the CPU cores.
-# A single worker also serialises requests; a timed-out request cancels its job if it has not started.
-_inference_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="inference")
-
 
 def describe_engine(settings: Settings) -> tuple[bool, str | None, str | None]:
     """Report availability without loading any model or downloading anything."""
@@ -73,14 +69,6 @@ def _await_inference(future: "Future[TranscriptionResult]", timeout: int) -> Tra
         # A running inference cannot be interrupted; a queued one is dropped here.
         future.cancel()
         raise ApiError(504, "inference_timeout", f"Transcription exceeded {timeout} seconds.") from exc
-
-
-def _discard_when_idle(directory: str, future: Future | None) -> None:
-    """Remove the temp dir now, or once a still-running inference stops reading from it."""
-    if future is not None and not future.done():
-        future.add_done_callback(lambda _f: shutil.rmtree(directory, ignore_errors=True))
-    else:
-        shutil.rmtree(directory, ignore_errors=True)
 
 
 def build_router(settings: Settings) -> APIRouter:
@@ -138,7 +126,7 @@ def build_router(settings: Settings) -> APIRouter:
             )
             duration = validate_wav(model_wav, max_seconds=limit)
             # Keep the future even on timeout: the temp dir must outlive a still-running inference.
-            inference = _inference_pool.submit(engine.transcribe, model_wav)
+            inference = inference_worker.submit(engine.transcribe, model_wav)
             result = _await_inference(inference, settings.inference_timeout_seconds)
             logger.info(
                 "Transcribed upload ext=%s bytes=%d audio=%.1fs engine=%s model=%s elapsed=%.2fs",
@@ -164,7 +152,7 @@ def build_router(settings: Settings) -> APIRouter:
             raise ApiError(500, "inference_failed", "Transcription failed unexpectedly. See service logs.") from exc
         finally:
             file.file.close()
-            _discard_when_idle(temp_dir, inference)
+            inference_worker.discard_when_idle(temp_dir, inference)
             admission.release()
 
     return router

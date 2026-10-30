@@ -29,6 +29,10 @@ class Settings:
     allow_no_auth: bool = False
     # Transcriptions accepted at once (running + waiting); further ones get 429 instead of queueing forever.
     max_pending_transcriptions: int = 3
+    live_max_session_seconds: float = 3600.0
+    live_idle_timeout_seconds: float = 30.0
+    live_resume_seconds: float = 30.0
+    live_job_timeout_seconds: float = 60.0
 
 
 def load_settings() -> Settings:
@@ -44,6 +48,10 @@ def load_settings() -> Settings:
         api_token=os.getenv("LINGUANOTE_API_TOKEN") or None,
         allow_no_auth=os.getenv("LINGUANOTE_ALLOW_NO_AUTH") == "1",
         max_pending_transcriptions=int(os.getenv("LINGUANOTE_MAX_PENDING", "3")),
+        live_max_session_seconds=float(os.getenv("LINGUANOTE_LIVE_MAX_SECONDS", "3600")),
+        live_idle_timeout_seconds=float(os.getenv("LINGUANOTE_LIVE_IDLE_SECONDS", "30")),
+        live_resume_seconds=float(os.getenv("LINGUANOTE_LIVE_RESUME_SECONDS", "30")),
+        live_job_timeout_seconds=float(os.getenv("LINGUANOTE_LIVE_JOB_TIMEOUT_SECONDS", "60")),
     )
 
 

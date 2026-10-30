@@ -82,6 +82,59 @@ Le renderer n'appelle jamais le service directement dans l'application packagée
 
 Le renderer revalide la forme des réponses (`src/services/transcriptionClient.ts`).
 
-## Évolutions prévues (non implémentées)
+## Transcription en direct : `WebSocket /api/v1/live` (protocole 1)
 
-Sessions de transcription en direct par WebSocket (phase 2), avec événements partiels/finaux : le contrat sera ajouté ici avant son implémentation.
+Contrat écrit **avant** l'implémentation (phase 2). Il vise à ce qu'une coupure de connexion ne perde ni ne duplique jamais de texte.
+
+### Principes
+
+- **Audio** : trames binaires PCM signé 16 bits little-endian, mono, 16 000 Hz. Le client convertit avant l'envoi ; le serveur ne rééchantillonne pas.
+- **Segmentation** : le serveur découpe l'audio en énoncés aux silences (pas de recouvrement : aucun mot dupliqué entre deux énoncés). Un énoncé trop long est coupé à son point le plus silencieux, sans perdre ni répéter d'échantillon ; un mot peut alors être coupé en deux, limite connue.
+- **Provisoire / final** : un `partial` est une hypothèse révisable d'un énoncé en cours ; le `final` du même `utterance_id` la remplace définitivement et n'est jamais révisé. Le texte n'est jamais traduit ni corrigé ; la langue est une estimation par énoncé.
+- **Temps** : `start_seconds` / `end_seconds` sont relatifs au début de la session et calculés à partir du nombre d'échantillons reçus (pas d'horloge système).
+- **Un seul moteur, une seule session** : l'inférence est partagée avec l'import de fichiers (un worker). Une deuxième session reçoit `busy`.
+
+### Ouverture et authentification
+
+Les WebSocket ne sont pas soumis au CORS et le middleware HTTP ne s'y applique pas. Le serveur : (1) refuse (fermeture 1008) toute connexion dont l'en-tête `Origin` est présent et absent de `LINGUANOTE_CORS_ORIGINS` (le client Electron, côté Node, n'en envoie pas) ; (2) exige un **premier message texte** dans les 5 s, contenant le jeton ; sinon fermeture 1008. Le jeton est comparé en temps constant et n'est jamais journalisé.
+
+### Messages client → serveur
+
+| Message | Contenu |
+| --- | --- |
+| `{"type":"start","token":"…","protocol":1}` | Ouvre une session. |
+| `{"type":"resume","token":"…","protocol":1,"session_id":"…","last_event_id":N}` | Rattache une nouvelle connexion à une session détachée ; le serveur rejoue les événements d'`event_id` > N. |
+| trame binaire | 4 octets `seq` (uint32 big-endian, commence à 1, +1 par trame) puis le PCM (2 à 65 536 octets, nombre pair). |
+| `{"type":"stop"}` | Termine proprement : le reste de l'audio est finalisé, puis `session_ended`. |
+| `{"type":"ping"}` | Répond `{"type":"pong"}` (sans `event_id`). |
+
+### Événements serveur → client
+
+**Messages de transport** (propres à une connexion, sans `event_id`, jamais rejoués) :
+
+| `type` | Champs |
+| --- | --- |
+| `session_started` | `session_id`, `protocol`, `resumed`, `audio_ack` (plus grand `seq` reçu sans trou), `audio` (`format`, `sample_rate`, `channels`, `max_frame_bytes`), `limits` (`max_session_seconds`), `engine` (`name`, `model`, `timestamps`) |
+| `audio_ack` | `seq` : cumulatif ; le client peut oublier les trames ≤ `seq` |
+| `pong` | réponse à `ping` |
+
+**Événements de session** (journalisés pour la reprise ; chacun porte un `event_id` entier strictement croissant dans la session) :
+
+| `type` | Champs |
+| --- | --- |
+| `partial` | `utterance_id`, `revision` (croissante), `text`, `start_seconds`, `end_seconds` |
+| `final` | `utterance_id`, `text`, `start_seconds`, `end_seconds`, `language`, `language_probability` (estimations, éventuellement `null`) |
+| `error` | `code`, `message`, `fatal`, et `utterance_id` quand l'erreur concerne un énoncé |
+| `session_ended` | `reason` (`client_stop`, `max_duration`, `idle_timeout`, `error`), `utterances` (nombre de `final` émis) |
+
+Un énoncé dont la transcription échoue ne disparaît jamais en silence : un `error` non fatal (`inference_failed` ou `inference_timeout`) portant son `utterance_id` est émis, et aucun `final` ne suit pour cet énoncé. Un énoncé sans parole reconnue ne produit ni `partial` ni `final`.
+
+### Règles de fiabilité
+
+- **Doublon** : une trame de `seq` ≤ `audio_ack` est ignorée (aucun traitement ni erreur) et réacquittée.
+- **Trou** : une trame de `seq` > `audio_ack + 1` est rejetée par un `error` non fatal `sequence_gap` (avec `expected`). Le client doit renvoyer à partir de `expected`.
+- **Réconciliation côté client** : ignorer tout événement dont l'`event_id` ≤ le dernier traité (rejeu) ; un `partial` remplace le précédent du même `utterance_id` s'il a une `revision` plus grande ; un `final` remplace tout `partial` du même `utterance_id` et clôt cet énoncé ; un `partial` reçu après son `final` est ignoré.
+- **Reprise** : après coupure, la session est conservée 30 s (`LINGUANOTE_LIVE_RESUME_SECONDS`). Le serveur garde les 500 derniers événements ; au-delà, `resume` échoue avec `resume_gap` (fatal) et le client doit ouvrir une nouvelle session. Le client garde les trames non acquittées (borné à 30 s d'audio) pour les renvoyer après `session_started.audio_ack`.
+- **Limites** : durée de session `LINGUANOTE_LIVE_MAX_SECONDS` (3600) ; 30 s sans aucune trame ni `ping` : `session_ended` `idle_timeout` ; file d'inférence bornée : saturation = `error` fatal `overloaded`, jamais une perte silencieuse. Un `partial` est abandonné (pas mis en file) si le worker est occupé ; un `final` ne l'est jamais.
+- **Erreurs fatales** : `unauthorized` (fermeture 1008), `busy`, `model_unavailable`, `invalid_message`, `frame_too_large`, `session_not_found`, `resume_gap`, `overloaded`. Non fatales : `sequence_gap`, `inference_failed`, `inference_timeout`. Les erreurs survenues avant l'ouverture de la session (jeton, `busy`, message invalide, modèle indisponible) sont envoyées comme message de transport `{"type":"error","code":…,"fatal":true}` sans `event_id`, puis la connexion est fermée.
+- **Confidentialité** : ni l'audio ni le texte ne sont journalisés ; le serveur ne conserve en mémoire que la fenêtre de rejeu et l'énoncé en cours, effacés à la fin de la session.
