@@ -1,10 +1,11 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, session } = require("electron");
+const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const api = require("./api-client.cjs");
 const launcher = require("./backend-launcher.cjs");
 const { createUrlPolicy } = require("./app-urls.cjs");
 const { createBubbleController } = require("./bubble-controller.cjs");
+const { createArmGate } = require("./capture-gate.cjs");
 const ipcTrust = require("./ipc-trust.cjs");
 const { LiveClient } = require("./live-client.cjs");
 const { createPositionStore } = require("./position-store.cjs");
@@ -35,6 +36,10 @@ let shortcutReport = { registered: [], failed: [] };
 let backendState = { status: "starting", message: "Démarrage du service local…" };
 
 const ownership = ipcTrust.createOwnership();
+const captureGate = createArmGate();
+// What the session listens to. Chosen explicitly by the user; never changed behind their back.
+const CAPTURE_SOURCES = ["microphone", "system", "both"];
+let liveSource = null;
 
 const bubble = createBubbleController({
   BrowserWindow,
@@ -164,6 +169,7 @@ function onLiveEvent(payload) {
   if (payload.type === "client_state" && payload.state === "connecting") ensureBubbleVisible();
   if (payload.type === "client_state" && LIVE_IDLE_STATES.includes(payload.state)) {
     ownership.release();
+    liveSource = null;
     disposeOwnerWatch(); // the session is over: stop watching the window that owned it
     disposeOwnerWatch = () => {};
   }
@@ -221,10 +227,15 @@ function registerIpc() {
     return backendNotReady() ?? api.transcribe(config, payload);
   });
 
-  ipcMain.handle("linguanote:live:start", async (event) => {
+  ipcMain.handle("linguanote:live:start", async (event, options) => {
     assertTrustedSender(event);
     const notReady = backendNotReady();
     if (notReady) return notReady;
+    // An unknown source is an error, never a silent fallback to the microphone.
+    const requested = options?.source ?? "microphone";
+    if (!CAPTURE_SOURCES.includes(requested)) {
+      return { ok: false, code: "invalid_source", message: "Source audio inconnue." };
+    }
     if (liveActive()) return { ok: false, code: "already_running", message: "Une session en direct est déjà en cours." };
     liveClient = new LiveClient(config, {
       onEvent: onLiveEvent,
@@ -242,6 +253,10 @@ function registerIpc() {
     if (!started.ok) {
       disposeOwnerWatch = () => {};
       return { ok: false, code: started.error.code ?? "unknown", message: started.error.message };
+    }
+    if (liveActive()) {
+      liveSource = requested;
+      onLiveEvent({ type: "capture_source", source: liveSource }); // every window shows what is being listened to
     }
     return { ok: true };
   });
@@ -276,7 +291,20 @@ function registerIpc() {
   // A window opened (or reloaded) mid-session learns the current state from here.
   ipcMain.handle("linguanote:live:status", async (event) => {
     assertTrustedSender(event);
-    return { ok: true, state: liveClient?.state ?? "idle", paused: liveClient?.paused ?? false };
+    return { ok: true, state: liveClient?.state ?? "idle", paused: liveClient?.paused ?? false, source: liveSource };
+  });
+
+  // The renderer announces it is about to ask for system audio. Without this, the display handler denies.
+  ipcMain.handle("linguanote:capture:armSystemAudio", async (event) => {
+    assertTrustedSender(event);
+    captureGate.arm(event.sender.id);
+    return { ok: true };
+  });
+
+  ipcMain.handle("linguanote:capture:disarm", async (event) => {
+    assertTrustedSender(event);
+    captureGate.disarm();
+    return { ok: true };
   });
 
   ipcMain.handle("linguanote:bubble:setExpanded", async (event, value) => {
@@ -330,7 +358,7 @@ async function runSmokeTest() {
     check("main page rendered with the strict CSP", mainProbe.hasRoot && /default-src 'self'/.test(mainProbe.csp ?? "") && !/unsafe-inline/.test(mainProbe.csp ?? ""), JSON.stringify(mainProbe.csp));
     check("bubble page rendered with the strict CSP", bubbleProbe.hasRoot && bubbleProbe.marker && /default-src 'self'/.test(bubbleProbe.csp ?? "") && !/unsafe-inline/.test(bubbleProbe.csp ?? ""));
     check("renderers have no Node.js (require/process undefined)", [mainProbe, bubbleProbe].every((p) => p.require === "undefined" && p.process === "undefined"));
-    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "health", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
+    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
     check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
     const frameProbe = `new Promise((resolve) => {
@@ -345,6 +373,29 @@ async function runSmokeTest() {
       const frames = await run(contents, frameProbe);
       check(`${label} page: a frame is blocked by the CSP and gets no bridge`, frames.violations.some((d) => d.startsWith("frame-src") || d.startsWith("child-src")) && !frames.sawLinguaNote, JSON.stringify(frames));
     }
+
+    // System audio capture is denied unless the window armed it first, once, and only for itself.
+    const askForSystemAudio = `(async () => {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        const audio = stream.getAudioTracks().map((t) => t.label);
+        const hadVideo = stream.getVideoTracks().length;
+        stream.getTracks().forEach((t) => t.stop());
+        return { granted: true, audio, hadVideo };
+      } catch (error) { return { granted: false, name: error.name }; }
+    })()`;
+    const unarmed = await run(mainWindow.webContents, askForSystemAudio);
+    check("system audio is denied when nothing armed it", unarmed.granted === false, JSON.stringify(unarmed));
+
+    await run(mainWindow.webContents, "window.linguaNote.capture.armSystemAudio()");
+    const otherWindow = await run(bubble.webContents, askForSystemAudio);
+    check("an arm made by one window cannot be used by the other", otherWindow.granted === false, JSON.stringify(otherWindow));
+
+    const armed = await run(mainWindow.webContents, askForSystemAudio);
+    check("system audio is granted to the window that armed it (loopback audio track)", armed.granted === true && armed.audio.length === 1 && /audio/i.test(armed.audio[0]), JSON.stringify(armed));
+
+    const reused = await run(mainWindow.webContents, askForSystemAudio);
+    check("the arm is single-use: a second request is denied", reused.granted === false, JSON.stringify(reused));
 
     const win = bubble.window;
     const bounds = win.getBounds();
@@ -397,6 +448,50 @@ async function runSmokeTest() {
     }
   }
 
+  if (process.env.LINGUANOTE_SMOKE_SYSTEM_AUDIO === "1" && backendState.status === "ready") {
+    // AUDIBLE: the computer speaks one short sentence through its default output, which is captured as "computer
+    // sound" through the real UI and the real pipeline, and must come back as text.
+    const driveUi = `(async () => {
+      const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 200)); return test(); };
+      const select = [...document.querySelectorAll('label')].find((l) => l.textContent.startsWith('Source audio'))?.querySelector('select');
+      const press = (label) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(label));
+      if (!select || !press('Démarrer le direct')) return { error: 'controls not found' };
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'system');
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 300));
+      press('Démarrer le direct').click();
+      const live = await wait(() => document.querySelector('[data-testid="active-source"]'), 90000);
+      return { live: Boolean(live), badge: document.querySelector('[data-testid="active-source"]')?.textContent ?? null,
+               alerts: [...document.querySelectorAll('[role="alert"]')].map((a) => a.textContent) };
+    })()`;
+    const started = await run(mainWindow.webContents, driveUi);
+    check("the real UI starts a session on the computer sound", started.live === true && /Son de l’ordinateur/.test(started.badge ?? ""), JSON.stringify(started));
+
+    if (started.live) {
+      const speaker = require("node:child_process").spawn("powershell", ["-NoProfile", "-Command",
+        "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SelectVoice('Microsoft Hortense Desktop'); Start-Sleep -Milliseconds 800; $s.Speak('Le train pour Dakar part de la gare a huit heures du matin.')"],
+      { windowsHide: true, stdio: "ignore" });
+      const heard = await run(mainWindow.webContents, `(async () => {
+        const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 300)); return test(); };
+        const text = () => document.querySelector('.live-transcript')?.textContent ?? '';
+        await wait(() => /matin/i.test(text()), 60000); // the last word of the sentence
+        const level = document.querySelector('[role="meter"]')?.getAttribute('aria-valuenow');
+        const transcript = text();
+        [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith('Arrêter'))?.click();
+        await wait(() => /Session terminée/.test(document.body.textContent), 30000);
+        return { transcript, level, ended: /Session terminée/.test(document.body.textContent) };
+      })()`);
+      speaker.kill();
+      // Not a quality measurement: the smallest model may mishear a word. The check is that the captured computer sound
+      // really travelled through the pipeline and came back as most of the sentence.
+      const reference = "le train pour dakar part de la gare a huit heures du matin".split(" ");
+      const words = new Set(heard.transcript.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").split(/[^a-z0-9]+/));
+      const overlap = reference.filter((word) => words.has(word)).length / reference.length;
+      check(`what the computer played came back as text (${Math.round(overlap * 100)} % of the words; system audio -> live transcription)`, overlap >= 0.5, JSON.stringify(heard));
+      check("the session ended cleanly after the audible scenario", heard.ended === true);
+    }
+  }
+
   // The defaults are registered for real with Electron, then released at once. Another application holding one is a
   // legitimate outcome (reported, not an error); an accelerator Electron rejects as malformed is a real failure.
   const expectedAccelerators = resolveAccelerators();
@@ -431,13 +526,41 @@ app.whenReady().then(() => {
 
   // Only the microphone, and only for our own windows. Camera/screen requests are refused.
   const isOwnWindow = (contents) => appContents().includes(contents);
+  // "display-capture" (system audio) is allowed only for our windows and only while the gate is armed; the display
+  // media handler below then still checks the frame and consumes the single-use arm.
   session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) => (
-    isOwnWindow(contents) && permission === "media" && details?.mediaType === "audio"
+    isOwnWindow(contents)
+    && ((permission === "media" && details?.mediaType === "audio") || (permission === "display-capture" && captureGate.isArmed))
   ));
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const audioOnly = Array.isArray(details?.mediaTypes) && details.mediaTypes.every((type) => type === "audio");
-    callback(isOwnWindow(contents) && permission === "media" && audioOnly);
+    callback(
+      isOwnWindow(contents)
+      && ((permission === "media" && audioOnly) || (permission === "display-capture" && captureGate.isArmed)),
+    );
   });
+
+  // System audio ("loopback": what the computer plays). Electron only serves it together with a screen source,
+  // so the handler hands one over and the page drops the video track at once. Denied unless a trusted window armed
+  // the gate a moment earlier; the answer is always audio loopback, never anything else.
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const contents = request.frame ? webContents.fromFrame(request.frame) : null;
+      const trusted = contents && ipcTrust.isTrustedSender({ sender: contents, senderFrame: request.frame }, appContents(), urls);
+      if (!trusted || !request.audioRequested || !captureGate.consume(contents.id)) {
+        callback(); // deny
+        return;
+      }
+      const [screenSource] = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } });
+      if (!screenSource) {
+        callback();
+        return;
+      }
+      callback({ video: screenSource, audio: "loopback" });
+    } catch {
+      try { callback(); } catch { /* the request is already settled */ }
+    }
+  }, { useSystemPicker: false });
 
   registerIpc();
   createMainWindow();

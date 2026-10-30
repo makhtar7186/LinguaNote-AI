@@ -44,9 +44,20 @@ Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé cou
 
 Limites connues : la bulle n'insère pas encore le texte dans l'application active (phase 5) ; la capture micro reste dans une fenêtre (la bulle, ou la fenêtre principale qui a démarré la session) ; fermer la fenêtre principale ferme l'application.
 
-## Phase 4 - Audio système (à faire)
+## Phase 4 - Audio système (implémentée sous Windows, éprouvée avec une phrase synthétique)
 
-Micro validé (jalon 1, enregistrement court) ; capture de l'audio système sous Windows à valider séparément.
+| Élément | État |
+| --- | --- |
+| Sources séparées : microphone, son de l'ordinateur, les deux mélangés ; choix explicite, affiché, mémorisé | fait (tests de composants) |
+| Pas de basculement silencieux : une source perdue termine la session avec un message ; « micro + ordinateur » ne devient jamais « micro seul » si l'ordinateur échoue | fait, testé |
+| Choix du microphone | fait (liste du système, relue quand un périphérique est branché ou débranché) |
+| Capture du son de l'ordinateur (loopback Windows via Electron) | fait et **vérifié dans la vraie application** : refusée par défaut, armée par la fenêtre qui la demande, à usage unique, liée à cette fenêtre ; piste vidéo d'écran, exigée par Electron, coupée aussitôt |
+| Indicateur de niveau et avertissement de silence | fait |
+| Gestion des erreurs et des permissions | fait : refus, absence de piste audio, API indisponible (aperçu navigateur), source perdue |
+| Scénario réel de lecture de média | **éprouvé une fois** : une phrase prononcée par la voix Windows, capturée comme son de l'ordinateur par la vraie interface, retranscrite (69 % des mots ; le modèle `base` a mal entendu « Dakar ») |
+| **Non vérifié** | une vraie réunion (Teams, Zoom, Meet) ; plusieurs sorties audio (casque Bluetooth, HDMI) ; contenus protégés (DRM) qui peuvent rendre un silence ; la qualité du mélange micro + ordinateur sans casque (écho) ; macOS et Linux (non pris en charge, non testés) ; la perte du périphérique par débranchement réel |
+
+Limites connues : le son capturé est celui de tout le système, notifications comprises, sans filtre par application ; pas de séparation des locuteurs (diarisation, phase 6), donc une réunion est transcrite en un seul flux ; le mélange est une simple somme avec marge de volume.
 
 ## Phase 5 - Productivité (à faire)
 

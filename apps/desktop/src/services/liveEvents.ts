@@ -26,6 +26,10 @@ export function parseLiveEvent(value: unknown): LiveEvent | null {
       const state = CLIENT_STATES.find((candidate) => candidate === value.state);
       return state ? { type: "client_state", state } : null;
     }
+    case "capture_source":
+      return value.source === "microphone" || value.source === "system" || value.source === "both"
+        ? { type: "capture_source", source: value.source }
+        : null;
     case "pause_state":
       return typeof value.paused === "boolean" ? { type: "pause_state", paused: value.paused } : null;
     case "session_started": {

@@ -33,12 +33,16 @@ export interface ServiceHealth {
   code?: string;
 }
 
+/** What a live session listens to. Chosen by the user, shown everywhere, never switched silently. */
+export type AudioSourceKind = "microphone" | "system" | "both";
+
 export type LiveClientState = "idle" | "connecting" | "active" | "reconnecting" | "stopping" | "ended" | "failed";
 
 /** Validated live events (see src/services/liveEvents.ts). Those with an event_id are de-duplicated by it. */
 export type LiveEvent =
   | { type: "client_state"; state: LiveClientState }
   | { type: "pause_state"; paused: boolean }
+  | { type: "capture_source"; source: AudioSourceKind }
   | { type: "session_started"; resumed: boolean; engine?: { name: string; model: string } }
   | {
     type: "partial"; event_id: number; utterance_id: number; revision: number; text: string;
@@ -83,12 +87,13 @@ export interface LiveState {
   lastEventId: number;
   endReason: string | null;
   paused: boolean;
+  source: AudioSourceKind | null;
   engine?: { name: string; model: string };
 }
 
 export interface LiveBridge {
   /** Opens a session; resolves to the same `{ok}` envelope as the other bridge calls. */
-  start: () => Promise<unknown>;
+  start: (options?: { source?: AudioSourceKind }) => Promise<unknown>;
   /** Fire and forget: 16 kHz mono PCM s16le. */
   sendAudio: (pcm: Uint8Array) => void;
   stop: () => Promise<unknown>;
@@ -98,6 +103,12 @@ export interface LiveBridge {
   status: () => Promise<unknown>;
   /** Subscribes to raw events from the main process; returns the unsubscribe function. */
   onEvent: (listener: (event: unknown) => void) => () => void;
+}
+
+export interface CaptureBridge {
+  /** Must be called just before asking for system audio; otherwise the main process denies the request. */
+  armSystemAudio: () => Promise<unknown>;
+  disarm: () => Promise<unknown>;
 }
 
 export interface BubbleBridge {
@@ -122,6 +133,7 @@ export interface LinguaNoteBridge {
   transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
   live?: LiveBridge;
   bubble?: BubbleBridge;
+  capture?: CaptureBridge;
   shortcuts?: ShortcutsBridge;
 }
 

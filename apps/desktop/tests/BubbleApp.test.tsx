@@ -222,7 +222,7 @@ describe("expanded panel", () => {
     const harness = install("nonsense");
     render(<BubbleApp />);
     await open(harness);
-    expect(screen.queryByText(/indisponible/)).toBeNull();
+    expect(screen.queryByText(/Raccourci .*indisponible/)).toBeNull();
   });
 });
 

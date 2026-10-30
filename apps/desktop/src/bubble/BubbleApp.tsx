@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { LevelMeter, SilenceWarning, SourcePicker } from "../components/SourcePicker";
+import { useCapturePreferences, useMicrophones } from "../hooks/useCapturePreferences";
 import { useLiveTranscription } from "../hooks/useLiveTranscription";
+import { sourceLabel } from "../services/audioSource";
 import type { ShortcutReport } from "../types";
 import { bubbleMode, statusLabel, tail } from "./bubbleMode";
 
@@ -17,7 +20,13 @@ function parseShortcutReport(value: unknown): ShortcutReport | null {
 const prettyKey = (accelerator: string) => accelerator.replace("CommandOrControl", "Ctrl").replace("Space", "Espace");
 
 export default function BubbleApp() {
-  const live = useLiveTranscription({ handleCommands: true });
+  const preferences = useCapturePreferences();
+  // A shortcut starts a session with this window's own current choice: shown in the panel, never implicit.
+  const live = useLiveTranscription({
+    handleCommands: true,
+    defaultStart: { source: preferences.source, deviceId: preferences.deviceId },
+  });
+  const microphones = useMicrophones(live.state.status);
   const [openedByUser, setOpenedByUser] = useState(false);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const [shortcuts, setShortcuts] = useState<ShortcutReport | null>(null);
@@ -72,6 +81,26 @@ export default function BubbleApp() {
         <button className="bubble-icon" onClick={() => void hide()} aria-label="Masquer la bulle">×</button>
       </header>
 
+      {live_ && live.state.source && (
+        <div className="bubble-source" data-testid="active-source">
+          <span>{sourceLabel(live.state.source)}</span>
+          <LevelMeter level={live.level} label={sourceLabel(live.state.source)} />
+        </div>
+      )}
+      {live.silent && live.state.source && <SilenceWarning source={live.state.source} />}
+      {!live_ && (
+        <SourcePicker
+          compact
+          source={preferences.source}
+          deviceId={preferences.deviceId}
+          devices={microphones}
+          systemAvailable={Boolean(window.linguaNote?.capture)}
+          disabled={false}
+          onSource={preferences.setSource}
+          onDevice={preferences.setDeviceId}
+        />
+      )}
+
       <p className="bubble-transcript" aria-live="polite">
         {text.final}
         {text.provisional && <span className="bubble-provisional" data-testid="provisional"> {text.provisional}</span>}
@@ -87,7 +116,13 @@ export default function BubbleApp() {
 
       <div className="bubble-controls">
         {!live_ ? (
-          <button className="bubble-primary" onClick={() => void live.start()} disabled={!live.supported}>Démarrer</button>
+          <button
+            className="bubble-primary"
+            onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId })}
+            disabled={!live.supported}
+          >
+            Démarrer
+          </button>
         ) : (
           <>
             {live.state.status === "live" && (

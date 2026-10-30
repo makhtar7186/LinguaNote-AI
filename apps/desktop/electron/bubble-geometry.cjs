@@ -1,7 +1,7 @@
 // Pure geometry for the floating bubble window. No Electron imports: rectangles are {x, y, width, height}.
 
 const COLLAPSED = { width: 72, height: 72 };
-const EXPANDED = { width: 340, height: 300 };
+const EXPANDED = { width: 340, height: 380 }; // room for the source picker, the transcript, the controls and the hints
 const MARGIN = 16;
 
 const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);

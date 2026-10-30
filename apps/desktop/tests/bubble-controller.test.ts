@@ -111,7 +111,7 @@ describe("expanding, showing and remembering the position", () => {
     controller.create();
     const start = FakeWindow.last.getBounds();
     expect(controller.setExpanded(true)).toBe(true);
-    expect(FakeWindow.last.bounds).toMatchObject({ width: 340, height: 300 });
+    expect(FakeWindow.last.bounds).toMatchObject({ width: 340, height: 380 });
     expect(FakeWindow.last.bounds.x + 340).toBe(start.x + 72);
     expect(controller.isExpanded()).toBe(true);
     controller.setExpanded(false);

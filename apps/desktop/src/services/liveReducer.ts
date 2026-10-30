@@ -10,6 +10,7 @@ export const initialLiveState: LiveState = {
   lastEventId: 0,
   endReason: null,
   paused: false,
+  source: null,
 };
 
 export type LiveAction = LiveEvent | { type: "reset" };
@@ -48,6 +49,8 @@ export function liveReducer(state: LiveState, action: LiveAction): LiveState {
     }
     case "pause_state":
       return { ...state, paused: action.paused };
+    case "capture_source":
+      return { ...state, source: action.source };
     case "session_started":
       return { ...state, status: state.status === "stopping" ? "stopping" : "live", engine: action.engine ?? state.engine };
     case "partial": {

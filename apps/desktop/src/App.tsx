@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LevelMeter, SilenceWarning, SourcePicker } from "./components/SourcePicker";
+import { useCapturePreferences, useMicrophones } from "./hooks/useCapturePreferences";
 import { useLiveTranscription } from "./hooks/useLiveTranscription";
 import { MAX_RECORDING_SECONDS, useRecorder } from "./hooks/useRecorder";
+import { sourceLabel } from "./services/audioSource";
 import { transcriptText } from "./services/liveReducer";
 import { getServiceHealth, transcribeFile } from "./services/transcriptionClient";
 import type { ServiceHealth, TranscriptionResponse } from "./types";
@@ -40,7 +43,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const live = useLiveTranscription();
+  const preferences = useCapturePreferences();
+  const live = useLiveTranscription({ defaultStart: { source: preferences.source, deviceId: preferences.deviceId } });
+  const microphones = useMicrophones(live.state.status);
   const liveActive = ["connecting", "live", "reconnecting", "stopping"].includes(live.state.status);
   const liveText = transcriptText(live.state);
   const [bubbleNotice, setBubbleNotice] = useState("");
@@ -262,6 +267,16 @@ export default function App() {
           </div>
         )}
 
+        <SourcePicker
+          source={preferences.source}
+          deviceId={preferences.deviceId}
+          devices={microphones}
+          systemAvailable={Boolean(window.linguaNote?.capture)}
+          disabled={liveActive}
+          onSource={preferences.setSource}
+          onDevice={preferences.setDeviceId}
+        />
+
         <div className="mic-card live-card">
           <div className="mic-copy">
             <div>
@@ -281,11 +296,23 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <button className="record-button" onClick={() => void live.start()} disabled={!live.supported || busy || recording}>
+            <button
+              className="record-button"
+              onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId })}
+              disabled={!live.supported || busy || recording}
+            >
               Démarrer le direct
             </button>
           )}
         </div>
+
+        {liveActive && live.state.source && (
+          <div className="live-source" data-testid="active-source">
+            <span>Source : <strong>{sourceLabel(live.state.source)}</strong></span>
+            <LevelMeter level={live.level} label={sourceLabel(live.state.source)} />
+          </div>
+        )}
+        {live.silent && live.state.source && <SilenceWarning source={live.state.source} />}
 
         {(liveText.final || liveText.provisional || liveActive) && (
           <div className="result-card live-transcript-card" aria-live="polite">
