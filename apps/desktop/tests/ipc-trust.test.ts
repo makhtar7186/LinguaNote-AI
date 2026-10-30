@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
-const { isTrustedSender, createOwnership, watchOwner } = createRequire(import.meta.url)("../electron/ipc-trust.cjs");
+const { isTrustedSender, createOwnership, watchOwner, beginSession } = createRequire(import.meta.url)("../electron/ipc-trust.cjs");
 
 const policy = { isAppUrl: (url: string) => url === "app://index" || url === "app://bubble" };
 const frame = (url: string, processId = 1, routingId = 1) => ({ url, processId, routingId });
@@ -125,5 +125,94 @@ describe("watchOwner", () => {
     const dispose = watchOwner(createOwnership(), owner, vi.fn());
     owner.removeListener = () => { throw new Error("Object has been destroyed"); };
     expect(() => dispose()).not.toThrow();
+  });
+});
+
+describe("watchOwner refuses a window that is already gone", () => {
+  it("throws without claiming anything when the owner is already destroyed", () => {
+    const ownership = createOwnership();
+    const owner = Object.assign(new EventEmitter(), { id: 8, isDestroyed: () => true });
+    expect(() => watchOwner(ownership, owner, vi.fn())).toThrow(/n'existe plus/);
+    expect(ownership.current).toBeNull();
+  });
+
+  it("releases the claim and rethrows when Electron refuses to add the listeners", () => {
+    const ownership = createOwnership();
+    const owner = Object.assign(new EventEmitter(), { id: 8 });
+    owner.once = () => { throw new Error("Object has been destroyed"); };
+    expect(() => watchOwner(ownership, owner, vi.fn())).toThrow("Object has been destroyed");
+    expect(ownership.current).toBeNull(); // no claim left behind
+  });
+});
+
+describe("beginSession", () => {
+  const windowWithId = (id: number, destroyed = false) =>
+    Object.assign(new EventEmitter(), { id, isDestroyed: () => destroyed });
+
+  it("claims and watches the window BEFORE starting, so a start that fails at once finds them to release", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(1);
+    let ownedWhenStarting = false;
+    let watchedWhenStarting = false;
+    const result = beginSession({
+      ownership, owner, onOwnerGone: vi.fn(), onWatch: vi.fn(),
+      start: () => {
+        ownedWhenStarting = ownership.isOwner(1);
+        watchedWhenStarting = owner.listenerCount("destroyed") === 1;
+      },
+    });
+    expect(result).toEqual({ ok: true });
+    expect(ownedWhenStarting).toBe(true);
+    expect(watchedWhenStarting).toBe(true);
+  });
+
+  it("hands the dispose function out before start() runs, so a synchronous failure can release the watcher", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(1);
+    let dispose: () => void = () => {};
+    // Simulates the main process: the live client reports `failed` from inside start(), which releases and disposes.
+    const result = beginSession({
+      ownership, owner, onOwnerGone: vi.fn(),
+      onWatch: (fn: () => void) => { dispose = fn; },
+      start: () => { ownership.release(); dispose(); },
+    });
+    expect(result.ok).toBe(true);
+    expect(ownership.current).toBeNull();
+    expect(owner.listenerCount("destroyed")).toBe(0);
+    expect(owner.listenerCount("render-process-gone")).toBe(0); // nothing orphaned
+  });
+
+  it("undoes the claim and the watcher when start() throws, and reports the error", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(1);
+    const failure = Object.assign(new Error("déjà en cours"), { code: "already_running" });
+    const result = beginSession({
+      ownership, owner, onOwnerGone: vi.fn(), onWatch: vi.fn(),
+      start: () => { throw failure; },
+    });
+    expect(result).toEqual({ ok: false, error: failure });
+    expect(ownership.current).toBeNull();
+    expect(owner.listenerCount("destroyed")).toBe(0);
+  });
+
+  it("does not start at all for a window that no longer exists", () => {
+    const ownership = createOwnership();
+    const start = vi.fn();
+    const result = beginSession({
+      ownership, owner: windowWithId(2, true), onOwnerGone: vi.fn(), onWatch: vi.fn(), start,
+    });
+    expect(result.ok).toBe(false);
+    expect(start).not.toHaveBeenCalled();
+    expect(ownership.current).toBeNull();
+  });
+
+  it("stops the session it started when the owner is destroyed afterwards", () => {
+    const ownership = createOwnership();
+    const owner = windowWithId(1);
+    const onOwnerGone = vi.fn();
+    beginSession({ ownership, owner, onOwnerGone, onWatch: vi.fn(), start: vi.fn() });
+    owner.emit("destroyed");
+    expect(onOwnerGone).toHaveBeenCalledOnce();
+    expect(ownership.current).toBeNull();
   });
 });

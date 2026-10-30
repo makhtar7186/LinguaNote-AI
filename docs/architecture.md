@@ -53,7 +53,7 @@ Comparer deux pistes sans présumer du résultat : un moteur multilingue génér
 - Les fichiers longs, bruités ou multi-locuteurs peuvent produire de mauvais résultats ; le prototype ne promet pas diarisation ni qualité temps réel.
 - Les poids, dépendances natives, versions CUDA/cuDNN et conditions de redistribution affectent la portabilité et le packaging desktop.
 
-## Jalons proposés
+## Jalons proposés au départ (historique : plan initial du pipeline de fichier ; l'état réel est dans [roadmap.md](roadmap.md))
 
 1. Définir le corpus de référence et les critères d’acceptation, sans télécharger de modèles.
 2. Confirmer les capacités matérielles et sélectionner les premiers candidats/licences.
@@ -62,7 +62,7 @@ Comparer deux pistes sans présumer du résultat : un moteur multilingue génér
 5. Évaluer explicitement le code-switching et comparer détection par segments à transcription multilingue sans langue imposée.
 6. Décider si le résultat justifie un client Electron, puis traiter capture live comme jalon séparé.
 
-## Décisions encore ouvertes
+## Décisions encore ouvertes (la liste ci-dessous est maintenue à jour)
 
 - Taille et durée maximales : décidées pour le prototype (50 Mio, 600 s par défaut, abaissées par moteur) ; à réviser après la phase 1.
 - Modèle(s) à télécharger après vérification des ressources machine.

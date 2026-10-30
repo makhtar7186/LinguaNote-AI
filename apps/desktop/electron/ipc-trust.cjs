@@ -41,6 +41,9 @@ function createOwnership() {
  * @param {() => void} onOwnerGone
  */
 function watchOwner(ownership, owner, onOwnerGone) {
+  if (typeof owner.isDestroyed === "function" && owner.isDestroyed()) {
+    throw new Error("La fenêtre qui démarre la session n'existe plus.");
+  }
   ownership.claim(owner.id);
   const gone = () => {
     // Only if this window still owns the session: a newer session of another window must not be stopped by it.
@@ -48,8 +51,14 @@ function watchOwner(ownership, owner, onOwnerGone) {
     ownership.release();
     onOwnerGone();
   };
-  owner.once("destroyed", gone);
-  owner.once("render-process-gone", gone);
+  try {
+    owner.once("destroyed", gone);
+    owner.once("render-process-gone", gone);
+  } catch (error) {
+    owner.removeListener?.("destroyed", gone);
+    ownership.release(); // never leave a claim behind when the window cannot be watched
+    throw error;
+  }
   return function dispose() {
     try {
       owner.removeListener("destroyed", gone);
@@ -60,4 +69,30 @@ function watchOwner(ownership, owner, onOwnerGone) {
   };
 }
 
-module.exports = { isTrustedSender, createOwnership, watchOwner };
+/**
+ * Starts a session for `owner` in the order that cannot leave anything behind: claim and watch the window FIRST,
+ * then start. A start that throws, or that fails or ends synchronously (the live client reports `failed` from
+ * inside start()), therefore always finds the claim and the watcher it must release.
+ * @param {object} args
+ * @param {object} args.ownership
+ * @param {object} args.owner   the webContents that asked
+ * @param {() => void} args.start  starts the session (may throw)
+ * @param {() => void} args.onOwnerGone  stops the session when the owner disappears
+ * @param {(dispose: () => void) => void} args.onWatch  receives the watcher's dispose BEFORE start() runs
+ * @returns {{ok: true} | {ok: false, error: Error}}
+ */
+function beginSession({ ownership, owner, start, onOwnerGone, onWatch }) {
+  let dispose = () => {};
+  try {
+    dispose = watchOwner(ownership, owner, onOwnerGone);
+    onWatch(dispose);
+    start();
+    return { ok: true };
+  } catch (error) {
+    dispose();
+    ownership.release();
+    return { ok: false, error };
+  }
+}
+
+module.exports = { isTrustedSender, createOwnership, watchOwner, beginSession };

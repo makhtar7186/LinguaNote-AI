@@ -230,15 +230,20 @@ function registerIpc() {
       onEvent: onLiveEvent,
       onState: (state) => onLiveEvent({ type: "client_state", state }),
     });
-    try {
-      liveClient.start();
-      // The window that starts a session owns the microphone for it; if that window disappears the session ends.
-      disposeOwnerWatch();
-      disposeOwnerWatch = ipcTrust.watchOwner(ownership, event.sender, () => liveClient?.stop());
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, code: error.code ?? "unknown", message: error.message };
+    // Claim and watch the owning window BEFORE starting, so a start that fails at once leaves nothing behind.
+    disposeOwnerWatch();
+    const started = ipcTrust.beginSession({
+      ownership,
+      owner: event.sender,
+      start: () => liveClient.start(),
+      onOwnerGone: () => liveClient?.stop(),
+      onWatch: (dispose) => { disposeOwnerWatch = dispose; },
+    });
+    if (!started.ok) {
+      disposeOwnerWatch = () => {};
+      return { ok: false, code: started.error.code ?? "unknown", message: started.error.message };
     }
+    return { ok: true };
   });
 
   // Audio is fire-and-forget (many small messages): invalid chunks are dropped, never forwarded.
