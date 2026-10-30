@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "linguanote-transcription"
+version = "0.1.0"
+description = "Local audio transcription service for LinguaNote AI"
+requires-python = ">=3.11,<3.14"
+dependencies = []
+
+[project.optional-dependencies]
+api = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "python-multipart>=0.0.9,<1",
+]
+omnilingual = ["omnilingual-asr>=0.1"]
+mcp-server = ["mcp>=1.28,<2"]
+# av 18.1+ rejects the metadata_errors argument that faster-whisper 1.2.x passes to av.open().
+windows-asr = ["faster-whisper>=1.1,<2", "av>=11,<18.1"]
+dev = ["pytest>=8", "httpx2>=2", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.File"]

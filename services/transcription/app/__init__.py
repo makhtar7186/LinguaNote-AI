@@ -1,0 +1,1 @@
+"""LinguaNote transcription service."""

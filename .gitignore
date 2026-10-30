@@ -1,0 +1,41 @@
+# Python environments and generated files
+.venv/
+venv/
+node_modules/
+dist/
+release/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.tsbuildinfo
+
+# Logs and local tooling output
+*.log
+.cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Model weights, caches, databases, and local audio data
+models/
+hf_cache/
+fairseq2_cache/
+data/
+*.sqlite3
+
+# Personal recordings and media (never version audio)
+*.m4a
+*.mp3
+*.wav
+*.webm
+*.ogg
+*.flac
+!apps/desktop/tests/fixtures/**
+
+# Editor and local tooling
+.vscode/
+.claude/
