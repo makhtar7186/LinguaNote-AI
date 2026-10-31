@@ -118,11 +118,19 @@ class HistoryRepository:
     def append_segment(
         self, session_id: str, *, text: str, start_seconds: float | None = None, end_seconds: float | None = None,
         language: str | None = None, language_probability: float | None = None, position: int | None = None,
-    ) -> None:
+        only_if_enabled: bool = False,
+    ) -> bool:
+        """Append a segment. With `only_if_enabled`, the setting is checked inside the same write transaction, so a
+        history turned off at any moment is never written to afterwards. Returns whether a row was written."""
         text = text.strip()[:MAX_SEGMENT_CHARS]
         if not text:
-            return
+            return False
         with self.database.write() as connection:
+            if only_if_enabled:
+                connection.execute("BEGIN IMMEDIATE")  # takes the write lock first: no settings change can slip in
+                enabled = connection.execute("SELECT value FROM settings WHERE key = 'history_enabled'").fetchone()
+                if enabled is None or enabled[0] != "1":
+                    return False
             if position is None:
                 position = connection.execute(
                     "SELECT COALESCE(MAX(position) + 1, 0) FROM segments WHERE session_id = ?", (session_id,),
@@ -132,6 +140,7 @@ class HistoryRepository:
                 "language_probability) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (session_id, position, start_seconds, end_seconds, text, language, language_probability),
             )
+        return True
 
     def finish_session(self, session_id: str, *, duration_seconds: float | None, status: str = "complete") -> None:
         with self.database.write() as connection:
@@ -273,13 +282,15 @@ class SessionRecorder:
 
     def segment(self, **fields) -> bool:
         try:
-            # Turning the history off takes effect at once, even in the middle of a session: from then on nothing
-            # more is written (what was already saved stays until the user deletes it).
-            if not self.repository.get_settings().enabled:
-                return True
-            self.repository.append_segment(self.session_id, position=self._position, **fields)
-            self._position += 1
-            return True
+            # Turning the history off takes effect at once, even in the middle of a session: the setting is checked
+            # in the same transaction as the write, so nothing is stored after it (what was saved before stays until
+            # the user deletes it).
+            written = self.repository.append_segment(
+                self.session_id, position=self._position, only_if_enabled=True, **fields,
+            )
+            if written:
+                self._position += 1
+            return True  # not written because the history is off (or the text empty) is not a failure
         except Exception as error:  # noqa: BLE001
             logger.warning("History segment not saved (%s)", type(error).__name__)
             self.ok = False

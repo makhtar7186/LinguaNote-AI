@@ -386,3 +386,27 @@ def test_turning_the_history_off_during_a_live_session_stops_the_recording(clien
     assert ("error", "history_write_failed") not in kinds  # switching off is not a storage failure
     stored = client.app.state.history.list_sessions()["items"]
     assert len(stored) == 1 and stored[0]["segment_count"] == 1  # the second utterance was not saved
+
+
+def test_a_setting_turned_off_while_a_write_is_waiting_is_honoured(client):
+    """The check and the write are one transaction: no segment slips in after the history was switched off."""
+    import threading
+    import time
+
+    from app.storage.history import SessionRecorder
+
+    enable(client)
+    repository = client.app.state.history
+    recorder = SessionRecorder.begin(repository, kind="live", source="microphone")
+    assert recorder is not None
+    result = {}
+    with repository.database.write() as connection:  # holds the write lock, like a settings change in progress
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("UPDATE settings SET value = '0' WHERE key = 'history_enabled'")
+        worker = threading.Thread(target=lambda: result.update(saved=recorder.segment(text="ne doit pas être écrit")))
+        worker.start()
+        time.sleep(0.3)  # the writer is now blocked on the lock
+    worker.join(timeout=10)
+    assert result == {"saved": True}  # switched off is not a failure
+    assert repository.list_sessions()["items"][0]["segment_count"] == 0
+    assert recorder.ok
