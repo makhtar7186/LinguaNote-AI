@@ -5,7 +5,7 @@ Ce document décrit ce qui est réellement en place et ce qui reste à faire (é
 ## Données et traitement
 
 - Audio et texte sont traités localement. Aucune API cloud n'est utilisée, aucune télémétrie n'existe.
-- Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première transcription. Hors-ligne, la transcription échoue avec `model_unavailable`. Il n'y a pas encore de confirmation explicite avant ce téléchargement (limite connue).
+- Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première utilisation (avec le moteur optionnel `language-routing`, deux modèles : le modèle choisi et le petit modèle `tiny` qui lit la langue ; les modèles wolof ne sont jamais téléchargés par l'application). Hors-ligne, la transcription échoue avec `model_unavailable`. Il n'y a pas encore de confirmation explicite avant ce téléchargement (limite connue).
 - Les fichiers envoyés sont écrits dans un dossier temporaire (`tempfile.mkdtemp`) supprimé à la fin de la requête, succès ou erreur. Si une inférence dépasse son délai et continue de lire le fichier, la suppression est différée jusqu'à la fin de cette inférence. Une fermeture forcée du processus peut laisser un dossier `linguanote-*` dans le répertoire temporaire de l'utilisateur. Le nom du client n'est jamais utilisé comme chemin.
 - Par défaut rien n'est conservé. Un historique local existe, mais seulement si l'utilisateur l'active (voir « Historique des transcriptions » plus bas).
 - L'interface n'émet plus de requête vers Google Fonts : l'import de polices distantes a été supprimé (polices système de repli), pour tenir la promesse « aucun accès réseau » hors téléchargement du modèle.
@@ -69,7 +69,7 @@ Aucun secret n'est stocké dans le dépôt. `LINGUANOTE_API_TOKEN` se transmet p
 
 Téléchargement des modèles wolof protégés (Kiriku) : un jeton Hugging Face en lecture seule est nécessaire **une seule fois, pour obtenir les poids** (variable `HF_TOKEN` du compte Windows de la personne). L'application ne lit jamais ce jeton et n'en a pas besoin à l'exécution : le moteur `language-routing` ne charge que des dossiers locaux, sans réseau pour le modèle wolof. Un jeton collé dans une conversation ou un fichier doit être révoqué et remplacé.
 
-Moteur `language-routing` : tout le traitement reste local. Le petit modèle Whisper `tiny` qui lit la langue de chaque fenêtre est téléchargé à la première utilisation comme les autres modèles Whisper (voir « Données et traitement »). Le texte et l'audio des passages ne sont jamais écrits dans les journaux : seuls le numéro du passage et le type d'erreur le sont, et les fichiers temporaires de chaque passage sont supprimés à la fin du traitement.
+Moteur `language-routing` : l'audio et les textes ne quittent jamais la machine, mais le moteur n'est pas entièrement hors réseau tant que ses modèles Whisper ne sont pas en cache : le petit modèle `tiny` qui lit la langue de chaque fenêtre est téléchargé à la première utilisation comme les autres modèles Whisper (voir « Données et traitement »). Le texte et l'audio des passages ne sont jamais écrits dans les journaux : seuls le numéro du passage et le type d'erreur le sont, et les fichiers temporaires de chaque passage sont supprimés à la fin du traitement.
 
 ## Licences des composants
 
