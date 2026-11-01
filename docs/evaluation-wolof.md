@@ -2,7 +2,7 @@
 
 Ce document remplace, pour le wolof, le constat « 0 clip » de [evaluation-results.md](evaluation-results.md) (phase 1, corpus synthétique FR/EN). Les données brutes agrégées sont archivées dans [eval-results/2026-11-01-wolof/](eval-results/2026-11-01-wolof/) : résumés de chaque exécution et tableaux par modèle. Elles ne contiennent aucun audio ni texte de corpus.
 
-**À retenir.** Whisper ne transcrit pas le wolof. Des modèles ajustés au wolof existent et sont nettement meilleurs, surtout un modèle large, au prix d'une lenteur importante sur processeur. Un routage par langue qui envoie les passages wolof à un tel modèle divise l'erreur par trois sur des enregistrements mixtes **artificiels**. Rien de ceci ne démontre un support du wolof spontané, bruité, ni du changement de langue au milieu d'une phrase.
+**À retenir.** Whisper n'a pas de support du wolof : ses tailles tiny, base et small donnent un WER de 99 % ou plus sur du wolof lu, ce qui rend le texte inutilisable (ce n'est pas une preuve d'incapacité absolue de tout Whisper, les tailles plus grandes n'ont pas été mesurées). Des modèles ajustés au wolof existent et sont nettement meilleurs, surtout un modèle large, au prix d'une lenteur importante sur processeur. Un routage par langue qui envoie les passages wolof à un tel modèle fait passer le WER de 56 % à 24 % avec le petit modèle M9 (facteur ≈ 2,4) et de 66 % à 21 % avec Kiriku (facteur ≈ 3,1), sur des enregistrements mixtes **artificiels**. Rien de ceci ne démontre un support du wolof spontané, bruité, ni du changement de langue au milieu d'une phrase.
 
 ## Données
 
@@ -15,7 +15,7 @@ Toutes les données sont dans `data/` (ignoré par Git). Aucun audio ni poids de
 
 Limite générale : **toute la parole est lue**. Aucun enregistrement de réunion, aucun bruit de fond, aucune parole spontanée.
 
-## 1. Whisper seul ne convient pas au wolof
+## 1. Whisper seul (tiny, base, small) ne convient pas au wolof
 
 WER sur les 150 clips ALFFA `dev` (une valeur supérieure à 100 % est possible : insertions) :
 
@@ -109,6 +109,10 @@ Un fichier mixte de 30 s (anglais, trois passages wolof, français) envoyé à l
 - Petits échantillons (4 et 10 enregistrements ; 20 et 56 clips) : aucune conclusion statistique.
 - Wolof sur d'autres voix, accents ou micros que ceux d'ALFFA et de FLEURS.
 - Direct (streaming) : le routage n'y est pas disponible et n'a pas été testé.
+- Les frontières sont ramenées à l'instant le plus silencieux dans ±0,6 s ; sans vraie pause à cet endroit, elles peuvent tomber à l'intérieur d'un mot. Mesuré seulement avec des pauses de 0,4 à 0,8 s entre clips.
+- Le texte des passages est simplement joint par des espaces : majuscules et ponctuation ne sont pas réconciliées d'un passage à l'autre, et un mot coupé à une frontière n'est pas recollé.
+- Les chemins configurés (modèle wolof, détecteur) ne sont contrôlés que par leur existence, pas par leur intégrité.
+- Les tests automatiques du routage utilisent un détecteur et des moteurs factices (ils prouvent la logique, pas la qualité) ; les chiffres de ce document viennent des exécutions réelles listées plus haut.
 
 ## Reproduire
 

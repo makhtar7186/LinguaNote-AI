@@ -92,6 +92,40 @@ def test_silence_alone_claims_no_language():
     assert [(c.label, c.confidence) for c in chunks] == [(UNKNOWN, 0.0)]
 
 
+def test_a_fraction_of_a_second_of_silence_is_still_one_covering_chunk():
+    chunks = segment_by_language(silence(0.3), FrequencyDetector())
+    assert [(c.label, c.start_seconds, c.end_seconds) for c in chunks] == [(UNKNOWN, 0.0, pytest.approx(0.3))]
+
+
+def test_spans_shorter_than_the_minimum_are_absorbed_by_a_neighbour_and_time_stays_covered():
+    from app.language.segmentation import _merge_short
+
+    spans = [[0.0, 1.0, "fr", 0.9, 1.0], [1.0, 1.4, "wo", 0.6, 1.0], [1.4, 2.0, "fr", 0.8, 1.0],
+             [2.0, 3.0, "en", 0.7, 1.0], [3.0, 9.0, "wo", 0.95, 4.0]]
+    merged = _merge_short([list(span) for span in spans], 2.0)
+    assert merged[0][0] == 0.0 and merged[-1][1] == 9.0  # the recording is still covered end to end
+    for before, after in zip(merged, merged[1:], strict=False):
+        assert after[0] == before[1] and after[2] != before[2]  # contiguous, and neighbours differ in label
+    assert all(span[1] - span[0] >= 2.0 for span in merged)
+
+
+def test_many_tiny_alternating_passages_still_tile_the_audio():
+    # 20 alternations of 0.5 s: far shorter than a detection window. Nothing may be dropped or overlap.
+    # (The smoothing alone keeps this input from producing micro-chunks, so this does not exercise the merge step:
+    # test_spans_shorter_than_the_minimum... does.)
+    parts = []
+    for index in range(20):
+        parts.append(tone(0.5, FR_HZ if index % 2 == 0 else WO_HZ))
+    samples = audio(*parts)
+    config = SegmentationConfig()
+    chunks = segment_by_language(samples, FrequencyDetector(), config)
+    assert chunks[0].start_seconds == 0.0 and chunks[-1].end_seconds == pytest.approx(10.0)
+    for before, after in zip(chunks, chunks[1:], strict=False):
+        assert after.start_seconds == pytest.approx(before.end_seconds)  # contiguous: no gap, no overlap
+    assert [c.index for c in chunks] == list(range(len(chunks)))
+    assert all(c.duration >= config.min_span_seconds - 1e-6 for c in chunks) or len(chunks) == 1
+
+
 def test_empty_audio_gives_no_chunk_and_asks_nothing_of_the_detector():
     detector = FrequencyDetector()
     assert segment_by_language(np.zeros(0, dtype=np.float32), detector) == []
@@ -208,6 +242,17 @@ def test_the_routed_engine_reports_a_language_only_for_a_single_language_recordi
     r, _ = router()
     write_wav(tmp_path / "wolof.wav", tone(6.0, WO_HZ))
     assert RoutedEngine(r).transcribe(tmp_path / "wolof.wav").language == "wo"
+
+
+def test_audio_with_no_detectable_language_goes_to_the_default_engine_and_claims_no_language(tmp_path):
+    r, engines = router()
+    write_wav(tmp_path / "quiet.wav", silence(5.0))
+    engine = RoutedEngine(r)
+    result = engine.transcribe(tmp_path / "quiet.wav")
+    item = engine.last.chunks[0]
+    assert item.chunk.label == UNKNOWN and item.fallback is True and item.engine_label == "fr"
+    assert result.language is None and all(s.language is None for s in result.segments)
+    assert len(engines["fr"].calls) == 1 and engines["wo"].calls == []
 
 
 def test_every_segment_carries_the_language_it_was_routed_under(tmp_path):
