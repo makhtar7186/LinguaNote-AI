@@ -60,10 +60,13 @@ def _write_wav(path: Path, samples: np.ndarray) -> None:
 class LanguageRouter:
     def __init__(
         self, engines: dict[str, SpeechEngine], default_label: str, detector: LanguageDetector,
-        config: SegmentationConfig | None = None,
+        config: SegmentationConfig | None = None, language_hints: frozenset[str] = frozenset(),
     ) -> None:
+        """`language_hints`: labels that are real Whisper language codes ("fr", "en"), so the passage may be transcribed
+        in that language. Never "wo": Whisper has no Wolof code, and the Wolof model is told nothing."""
         if default_label not in engines:
             raise ValueError("The default label needs an engine.")
+        self.language_hints = language_hints
         self.engines = engines
         self.default_label = default_label
         self.detector = detector
@@ -77,11 +80,16 @@ class LanguageRouter:
     def _transcribe_chunk(self, chunk: Chunk, samples: np.ndarray) -> RoutedChunk:
         engine_label, engine, fallback = self._engine_for(chunk.label)
         begin, end = int(chunk.start_seconds * SAMPLE_RATE), int(chunk.end_seconds * SAMPLE_RATE)
+        # A passage routed to a multilingual engine is transcribed in the language we detected for it, instead of
+        # letting that engine guess again (and write Arabic or Cyrillic when its guess is wrong). Only for engines that
+        # accept the hint, and only when the engine stands for that very language (not on a fallback).
+        hint = chunk.label if (not fallback and chunk.label in self.language_hints
+                               and getattr(engine, "accepts_language_hint", False)) else None
         with tempfile.TemporaryDirectory(prefix="linguanote-chunk-") as directory:
             path = Path(directory) / "chunk.wav"
             _write_wav(path, samples[begin:end])
             try:
-                result = engine.transcribe(path)
+                result = engine.transcribe(path, language=hint) if hint else engine.transcribe(path)
             except Exception as error:  # noqa: BLE001 - one bad chunk must not lose the others
                 logger.warning("Chunk %d failed (%s)", chunk.index, type(error).__name__)  # never the audio or text
                 return RoutedChunk(chunk, engine_label, fallback, "", (), error=type(error).__name__)

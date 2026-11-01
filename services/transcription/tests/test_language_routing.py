@@ -171,6 +171,20 @@ class FakeEngine:
                                    segments=(Segment(0.0, seconds, text),))
 
 
+class HintEngine(FakeEngine):
+    """An engine that accepts the language the router detected, and remembers what it was told."""
+
+    accepts_language_hint = True
+
+    def __init__(self, name, fail=False):
+        super().__init__(name, fail)
+        self.hints = []
+
+    def transcribe(self, audio_path: Path, language=None) -> TranscriptionResult:
+        self.hints.append(language)
+        return super().transcribe(audio_path)
+
+
 def router(engines=None, **kwargs):
     engines = engines or {"fr": FakeEngine("multi"), "wo": FakeEngine("wolof")}
     return LanguageRouter(engines, "fr", FrequencyDetector(), **kwargs), engines
@@ -213,6 +227,31 @@ def test_a_failing_chunk_is_reported_and_the_others_survive():
     assert result.chunks[1].error == "RuntimeError"
     assert "private text" not in str(result.chunks[1].error)  # only the error type is kept
     assert result.text.count("[multi") == 2
+
+
+def test_a_passage_is_transcribed_in_the_language_detected_for_it_except_wolof():
+    engines = {"fr": HintEngine("multi"), "wo": HintEngine("wolof")}
+    r, _ = router(engines, language_hints=frozenset({"fr", "en"}))
+    r.transcribe_samples(audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ), silence(0.8), tone(5.0, FR_HZ)))
+    assert engines["fr"].hints == ["fr", "fr"]  # told the detected language
+    assert engines["wo"].hints == [None]  # Whisper has no Wolof code: the Wolof model is told nothing
+
+
+def test_no_hint_is_given_when_the_router_was_not_asked_to_or_the_engine_cannot_take_one():
+    engines = {"fr": HintEngine("multi"), "wo": FakeEngine("wolof")}
+    r, _ = router(engines)  # no language_hints configured
+    r.transcribe_samples(audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ)))
+    assert engines["fr"].hints == [None]
+    # an engine without the capability is called exactly as before (no unexpected keyword argument)
+    r2, _ = router({"fr": FakeEngine("multi"), "wo": FakeEngine("wolof")}, language_hints=frozenset({"fr", "wo"}))
+    assert r2.transcribe_samples(audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ))).failed_chunks == ()
+
+
+def test_a_fallback_passage_is_not_forced_into_the_language_it_was_labelled_with():
+    engines = {"fr": HintEngine("multi")}  # no Wolof engine: the Wolof passage falls back to the default engine
+    r, _ = router(engines, language_hints=frozenset({"fr", "en", "wo"}))
+    r.transcribe_samples(audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ)))
+    assert engines["fr"].hints == ["fr", None]  # only the passage that really is French is told so
 
 
 def test_the_default_label_must_have_an_engine():

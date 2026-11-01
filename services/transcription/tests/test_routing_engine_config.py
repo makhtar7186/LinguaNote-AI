@@ -17,6 +17,8 @@ LANGUAGES = ("aa", "bb", "cc")
 
 
 class FakeWhisper:
+    accepts_language_hint = True
+
     def __init__(self, model=None):
         self.model = model or os.getenv("LINGUANOTE_WHISPER_MODEL", "base")  # same rule as the real engine
 
@@ -73,8 +75,67 @@ def test_the_engine_is_assembled_from_the_configuration(configured, fake_models)
     assert engine.name == "language-router" and engine.model == "small+wolof-ct2"
     engines = engine.router.engines
     assert engines["wo"].model == str(model)
-    assert engines["fr"] is engines["en"] and engines["fr"].model == "small"  # one multilingual model, loaded once
-    assert engine.router.default_label == "fr"
+    assert engines["fr"] is engines["en"] is engines["default"]  # one multilingual model, loaded once
+    assert engines["fr"].model == "small"
+    assert engine.router.default_label == "default" and engine.router.language_hints == {"fr", "en"}
+
+
+def test_french_and_english_can_each_have_their_own_model(configured, fake_models, monkeypatch):
+    monkeypatch.setenv(language_routing.FRENCH_MODEL_ENV, "french-finetune")
+    monkeypatch.setenv(language_routing.ENGLISH_MODEL_ENV, "small.en")
+    engine = language_routing.build_routing_engine()
+    engines = engine.router.engines
+    assert (engines["fr"].model, engines["en"].model, engines["default"].model) == ("french-finetune", "small.en", "small")
+    assert engines["wo"].model != "small"  # the Wolof model is its own engine
+    assert engine.model == "small+fr=french-finetune+en=small.en+wolof-ct2"
+    # unknown audio and unlisted languages still go to the multilingual default
+    assert engine.router._engine_for("unknown")[1] is engines["default"]
+
+
+def test_the_same_model_for_french_and_english_is_loaded_once(configured, fake_models, monkeypatch):
+    monkeypatch.setenv(language_routing.FRENCH_MODEL_ENV, "shared")
+    monkeypatch.setenv(language_routing.ENGLISH_MODEL_ENV, "shared")
+    engines = language_routing.build_routing_engine().router.engines
+    assert engines["fr"] is engines["en"] and engines["fr"] is not engines["default"]
+
+
+def test_the_rule_detector_needs_no_classifier_file(configured, fake_models, monkeypatch):
+    from app.language.rule import FrenchEnglishElseWolofDetector
+
+    monkeypatch.setenv(language_routing.DETECTOR_ENV, "fr-en-else-wolof")
+    monkeypatch.delenv(language_routing.CLASSIFIER_ENV)
+    engine = language_routing.build_routing_engine()
+    assert isinstance(engine.router.detector, FrenchEnglishElseWolofDetector)
+    assert engine.router.detector._threshold == pytest.approx(language_routing.DEFAULT_RULE_THRESHOLD)
+
+
+def test_the_rule_threshold_comes_from_the_environment_and_is_validated(configured, fake_models, monkeypatch):
+    monkeypatch.setenv(language_routing.DETECTOR_ENV, "fr-en-else-wolof")
+    monkeypatch.setenv(language_routing.RULE_THRESHOLD_ENV, "0.6")
+    assert language_routing.build_routing_engine().router.detector._threshold == pytest.approx(0.6)
+    for bad in ("abc", "0", "1", "1.4", "-1"):
+        monkeypatch.setenv(language_routing.RULE_THRESHOLD_ENV, bad)
+        with pytest.raises(ModelUnavailableError, match="strictly between 0 and 1"):
+            language_routing.build_routing_engine()
+
+
+def test_the_default_detector_is_the_trained_classifier(configured, fake_models, monkeypatch):
+    from app.language.classifier import ClassifierDetector
+
+    monkeypatch.delenv(language_routing.DETECTOR_ENV, raising=False)
+    assert isinstance(language_routing.build_routing_engine().router.detector, ClassifierDetector)
+
+
+def test_an_unknown_detector_name_is_refused(configured, monkeypatch):
+    monkeypatch.setenv(language_routing.DETECTOR_ENV, "magic")
+    with pytest.raises(ModelUnavailableError, match="must be 'classifier' or 'fr-en-else-wolof'"):
+        language_routing.routing_paths()
+
+
+def test_the_classifier_detector_still_requires_its_file(configured, monkeypatch):
+    monkeypatch.delenv(language_routing.CLASSIFIER_ENV)
+    with pytest.raises(ModelUnavailableError, match=language_routing.CLASSIFIER_ENV):
+        language_routing.routing_paths()
 
 
 def test_a_classifier_that_does_not_know_wolof_is_refused(configured, fake_models):

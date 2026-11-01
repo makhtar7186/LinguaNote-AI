@@ -34,11 +34,15 @@ class FasterWhisperEngine:
                 "Check network access on first use and available disk space."
             ) from exc
 
-    def transcribe(self, audio_path: Path) -> TranscriptionResult:
+    # The language-routing engine passes the language it already detected for the passage (see routing.py).
+    accepts_language_hint = True
+
+    def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+        """`language` forces the language of the whole file; None lets Whisper detect it (the default)."""
         segments, info = self._pipeline.transcribe(
             str(audio_path),
             task="transcribe",
-            language=None,
+            language=language,
             beam_size=3,
             vad_filter=True,
         )

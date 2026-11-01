@@ -35,6 +35,7 @@ from app.evaluation.metrics import EMPTY, word_counts
 from app.language.classifier import ClassifierDetector, LinearLanguageClassifier
 from app.language.detector import SAMPLE_RATE
 from app.language.routing import LanguageRouter, RoutedEngine, read_wav
+from app.language.rule import FrenchEnglishElseWolofDetector
 from app.language.segmentation import Chunk, SegmentationConfig
 from app.language.whisper_lid import WhisperLanguageFeatures
 
@@ -111,7 +112,13 @@ def oracle_chunks(truth: list[dict], total: float) -> list[Chunk]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--manifest", action="append", required=True)
-    parser.add_argument("--classifier", required=True)
+    parser.add_argument("--detector", choices=("classifier", "rule"), default="classifier")
+    parser.add_argument("--classifier", help="classifier JSON (required for --detector classifier)")
+    parser.add_argument("--rule-threshold", type=float, default=0.77, help="--detector rule: confidence to call fr/en")
+    parser.add_argument("--only-routed", action="store_true",
+                        help="skip the multilingual, wolof-only and oracle systems (compare detectors faster)")
+    parser.add_argument("--language-hints", action="store_true",
+                        help="tell the multilingual model the language detected for each fr/en passage")
     parser.add_argument("--wolof-model", required=True)
     parser.add_argument("--multilingual-model", default="small")
     parser.add_argument("--lid-model", default="tiny")
@@ -120,6 +127,8 @@ def main() -> int:
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
+    if args.detector == "classifier" and not args.classifier:
+        parser.error("--classifier is required with --detector classifier")
 
     items = {"wo": [], "fr": [], "en": []}
     for manifest in args.manifest:
@@ -129,10 +138,15 @@ def main() -> int:
 
     multilingual = build_engine(args.multilingual_model)
     wolof = build_engine(args.wolof_model)
-    detector = ClassifierDetector(WhisperLanguageFeatures(args.lid_model), LinearLanguageClassifier.load(Path(args.classifier)))
+    lid = WhisperLanguageFeatures(args.lid_model)
+    if args.detector == "rule":
+        detector = FrenchEnglishElseWolofDetector(lid, args.rule_threshold)
+    else:
+        detector = ClassifierDetector(lid, LinearLanguageClassifier.load(Path(args.classifier)))
     config = SegmentationConfig()
     engines = {"fr": multilingual, "en": multilingual, "wo": wolof}
-    routed_engine = RoutedEngine(LanguageRouter(engines, "fr", detector, config))
+    hints = frozenset({"fr", "en"}) if args.language_hints else frozenset()
+    routed_engine = RoutedEngine(LanguageRouter(engines, "fr", detector, config, language_hints=hints))
     rng = random.Random(args.seed)
 
     systems = {name: EMPTY for name in ("multilingual", "wolof-only", "routed", "oracle")}
@@ -161,6 +175,8 @@ def main() -> int:
                 ("routed", lambda: routed_engine.transcribe(path).text),
                 ("oracle", oracle_text),
             ):
+                if args.only_routed and name != "routed":
+                    continue
                 begin = time.perf_counter()
                 outputs[name] = run()
                 seconds[name] += time.perf_counter() - begin
@@ -187,6 +203,7 @@ def main() -> int:
         "median_boundary_error_seconds": statistics.median(errors_all) if errors_all else None,
         "max_boundary_error_seconds": max(errors_all) if errors_all else None,
         "spurious_boundaries": spurious,
+        "language_hints": args.language_hints, "detector": args.detector, "rule_threshold": args.rule_threshold if args.detector == "rule" else None,
         "classifier": args.classifier, "wolof_model": args.wolof_model, "multilingual_model": args.multilingual_model,
     }
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
