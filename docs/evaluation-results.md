@@ -35,7 +35,7 @@ Erreurs restantes (français uniquement) : `tiny` écrit « par » pour « part 
 ## Ce qui n'est pas mesuré
 
 - Vraie parole : accents, bruit, débit spontané, locuteurs variés.
-- Wolof : 0 clip dans ce corpus synthétique ; voir [evaluation-wolof.md](evaluation-wolof.md) pour les mesures faites ensuite (Whisper seul échoue en wolof).
+- Wolof : 0 clip dans ce corpus synthétique ; voir [evaluation-wolof.md](evaluation-wolof.md) pour les mesures faites ensuite (Whisper tiny, base et small échouent en wolof).
 - Code-switching (alternance dans une phrase) : 0 clip ici, et non mesuré non plus dans evaluation-wolof.md (seuls des clips lus collés bout à bout y sont testés).
 - Omnilingual (candidat wolof) : non installable sur cet environnement Windows (voir [model-selection.md](model-selection.md)).
 - Détection de langue par fenêtre courte, mots perdus ou dupliqués aux frontières, hallucinations sur bruit.
