@@ -11,7 +11,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.config import Settings
 from app.engines.base import ModelUnavailableError
-from app.engines.registry import get_engine
+from app.engines.registry import LIVE_ROUTING, get_engine
 from app.live.manager import BusyError, LiveManager
 from app.live.protocol import (
     MAX_CONTROL_TEXT_BYTES,
@@ -23,7 +23,7 @@ from app.live.protocol import (
     ResumeMessage,
     transport_error,
 )
-from app.live.segmenter import SAMPLE_RATE
+from app.live.segmenter import SAMPLE_RATE, SegmenterConfig
 from app.live.session import FrameResult, LiveSession
 
 logger = logging.getLogger("linguanote.live")
@@ -31,6 +31,7 @@ logger = logging.getLogger("linguanote.live")
 LIVE_PATH = "/api/v1/live"
 OPENING_TIMEOUT_SECONDS = 5.0
 POLICY_VIOLATION = 1008
+ROUTING_SEGMENTER = SegmenterConfig(min_utterance_seconds=10.0, max_utterance_seconds=20.0)
 
 
 class _Connection:
@@ -123,19 +124,16 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                 return None
             return session, True, opening.last_event_id
 
-        if settings.engine == "language-routing":
-            # Routing needs whole passages to decide a language; live windows are too short and would be re-routed
-            # one by one at several times real time on CPU. Honest refusal instead of a degraded mode.
-            await _reject(connection, "model_unavailable",
-                          "Language routing is for audio and video files; live transcription needs another engine.")
-            return None
+        routed = settings.engine == "language-routing"
         try:
-            engine = await run_in_threadpool(get_engine, settings.engine)
+            engine = await run_in_threadpool(get_engine, LIVE_ROUTING if routed else settings.engine)
         except ModelUnavailableError as exc:
             await _reject(connection, "model_unavailable", str(exc))
             return None
         try:
-            return manager.create(engine, source=getattr(opening, "source", None)), False, 0
+            # Routing reads the language of whole passages: long chunks (10 to 20 s), final text only.
+            options = {"segmenter_config": ROUTING_SEGMENTER, "partials": False} if routed else {}
+            return manager.create(engine, source=getattr(opening, "source", None), **options), False, 0
         except BusyError:
             await _reject(connection, "busy", "A live session is already running.")
             return None

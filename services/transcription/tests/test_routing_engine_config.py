@@ -1,5 +1,4 @@
 import os
-from concurrent.futures import CancelledError
 from dataclasses import replace
 
 import numpy as np
@@ -203,17 +202,34 @@ def test_health_says_why_routing_is_unavailable(monkeypatch):
     assert body["engine_selected"] is False and language_routing.WOLOF_MODEL_ENV in body["setup_message"]
 
 
-def test_live_transcription_refuses_the_routing_engine_with_a_clear_message():
-    replies = []
-    with client() as http:  # a client used as a context manager gives the socket the loop the app runs on
-        try:
-            with http.websocket_connect("ws://127.0.0.1/api/v1/live") as socket:
-                socket.send_json({"type": "start", "token": TOKEN, "protocol": 1})
-                replies.append(socket.receive_json())
-        except CancelledError:  # harness artefact when TestClient cancels the server task on exit
-            pass
-    assert replies[0]["type"] == "error" and replies[0]["code"] == "model_unavailable"
-    assert "files" in replies[0]["message"]
+def test_live_routing_uses_the_lighter_wolof_model_when_one_is_configured(configured, fake_models, tmp_path, monkeypatch):
+    light = tmp_path / "light-wolof"
+    light.mkdir()
+    (light / "model.bin").write_bytes(b"x")
+    monkeypatch.setenv(language_routing.LIVE_WOLOF_MODEL_ENV, str(light))
+    assert language_routing.build_routing_engine(live=True).router.engines["wo"].model == str(light)
+    model, _ = configured
+    assert language_routing.build_routing_engine().router.engines["wo"].model == str(model)  # files: unchanged
+
+
+def test_live_routing_falls_back_to_the_file_wolof_model(configured, fake_models, monkeypatch):
+    monkeypatch.delenv(language_routing.LIVE_WOLOF_MODEL_ENV, raising=False)
+    model, _ = configured
+    assert language_routing.build_routing_engine(live=True).router.engines["wo"].model == str(model)
+
+
+def test_a_live_wolof_model_that_is_not_converted_is_refused(configured, tmp_path, monkeypatch):
+    monkeypatch.setenv(language_routing.LIVE_WOLOF_MODEL_ENV, str(tmp_path))
+    with pytest.raises(ModelUnavailableError, match="model.bin"):
+        language_routing.routing_paths(live=True)
+
+
+def test_the_registry_builds_the_live_routing_engine(configured, fake_models):
+    registry.reset_engine()
+    try:
+        assert registry.get_engine(registry.LIVE_ROUTING).name == "language-router"
+    finally:
+        registry.reset_engine()
 
 
 class RoutedLikeEngine:

@@ -36,7 +36,10 @@ class LiveManager:
                 session.discard()
                 del self._sessions[session_id]
 
-    def create(self, engine: SpeechEngine, source: str | None = None) -> LiveSession:
+    def create(
+        self, engine: SpeechEngine, source: str | None = None, *,
+        segmenter_config: SegmenterConfig | None = None, partials: bool = True,
+    ) -> LiveSession:
         self.sweep()
         if any(not session.ended for session in self._sessions.values()):
             raise BusyError("A live session is already running.")
@@ -47,8 +50,8 @@ class LiveManager:
             if self._history is not None else None
         )
         session = LiveSession(
-            session_id, engine, self.limits, segmenter_config=self._segmenter_config, clock=self._clock,
-            recorder=recorder,
+            session_id, engine, self.limits, segmenter_config=segmenter_config or self._segmenter_config,
+            clock=self._clock, recorder=recorder, partials=partials,
         )
         self._sessions[session_id] = session
         return session

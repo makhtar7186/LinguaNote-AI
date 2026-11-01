@@ -3,6 +3,9 @@ import threading
 
 from app.engines.base import EngineCapabilities, ModelUnavailableError, SpeechEngine
 
+# Internal name: the routing engine built for live use (lighter Wolof model). Not a LINGUANOTE_ASR_ENGINE value.
+LIVE_ROUTING = "language-routing-live"
+
 _lock = threading.Lock()
 _engine: SpeechEngine | None = None
 _engine_name: str | None = None
@@ -18,6 +21,9 @@ def _build(engine_name: str) -> SpeechEngine:
     if engine_name == "language-routing":
         from app.engines.language_routing import build_routing_engine
         return build_routing_engine()
+    if engine_name == LIVE_ROUTING:
+        from app.engines.language_routing import build_routing_engine
+        return build_routing_engine(live=True)
     raise ModelUnavailableError(
         f"Unknown ASR engine '{engine_name}'. Choose faster-whisper, omnilingual-ctc or language-routing."
     )

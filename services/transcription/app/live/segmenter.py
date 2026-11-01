@@ -22,6 +22,9 @@ class SegmenterConfig:
     min_speech_seconds: float = 0.12  # shorter bursts (clicks, bumps) never become an utterance
     endpoint_silence_seconds: float = 0.7
     max_utterance_seconds: float = 15.0
+    # A silence only ends an utterance once it is this long: longer passages let the language be read reliably
+    # (language routing). 0 keeps the default behaviour: every pause ends the utterance.
+    min_utterance_seconds: float = 0.0
     partial_interval_seconds: float = 2.0
     cut_search_seconds: float = 2.0  # where to look for the quietest point of a forced cut
     pre_roll_seconds: float = 0.2  # kept before the first loud frame so word onsets are not clipped
@@ -128,7 +131,10 @@ class UtteranceSegmenter:
             self._next_id += 1
 
         finished: list[Utterance] = []
-        if self._silence_run * FRAME_SECONDS >= self.config.endpoint_silence_seconds:
+        long_enough = len(self._frames) * FRAME_SECONDS >= self.config.min_utterance_seconds
+        if self._silence_run * FRAME_SECONDS >= self.config.endpoint_silence_seconds and (
+            long_enough or self._utterance_id is None
+        ):
             if self._utterance_id is not None:
                 finished.append(self._finish(len(self._frames)))
             self._reset_utterance()

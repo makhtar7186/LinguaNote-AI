@@ -368,3 +368,31 @@ def test_engine_failures_are_reported_per_utterance_without_leaking_internals(mo
         assert "exploded" not in str(error)
         ws.send_json({"type": "stop"})
         assert read_until(ws, "session_ended")["utterances"] == 0
+
+
+def test_language_routing_is_used_live_with_long_passages_and_no_partial_text(monkeypatch):
+    built = []
+    monkeypatch.setattr(registry, "_build", lambda name: built.append(name) or FakeEngine())
+    with connect(make_client(engine="language-routing")) as ws, watchdog(ws):
+        assert start(ws)["type"] == "session_started"
+        # two bursts split by a 1.2 s pause: without routing they are two utterances (with partials)
+        send_audio(ws, tone(3.0) + silence(1.2) + tone(3.0) + silence(1.2))
+        ws.send_json({"type": "stop"})
+        seen: list = []
+        read_until(ws, "session_ended", keep=seen)
+    assert built == [registry.LIVE_ROUTING]
+    assert [m["type"] for m in seen] == ["final"]  # one passage, no partial
+    assert seen[0]["end_seconds"] - seen[0]["start_seconds"] > 6.5
+
+
+def test_without_routing_the_live_behaviour_is_unchanged(monkeypatch):
+    built = []
+    monkeypatch.setattr(registry, "_build", lambda name: built.append(name) or FakeEngine())
+    with connect(make_client(engine="faster-whisper")) as ws, watchdog(ws):
+        start(ws)
+        send_audio(ws, tone(1.0) + silence(1.2) + tone(1.0) + silence(1.2))
+        ws.send_json({"type": "stop"})
+        seen: list = []
+        read_until(ws, "session_ended", keep=seen)
+    assert built == ["faster-whisper"]
+    assert [m["type"] for m in seen].count("final") == 2

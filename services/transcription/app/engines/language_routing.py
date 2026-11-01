@@ -5,6 +5,8 @@ Configured explicitly, because nothing is downloaded or guessed:
   LINGUANOTE_ROUTING_WOLOF_MODEL      directory of a CTranslate2 Wolof Whisper model (see docs/model-selection.md)
   LINGUANOTE_ROUTING_CLASSIFIER       JSON file written by scripts/train_language_classifier.py (default detector only)
 Optional:
+  LINGUANOTE_ROUTING_LIVE_WOLOF_MODEL lighter Wolof model for live transcription (default: the one above);
+                                      a slow model cannot keep up with a live stream
   LINGUANOTE_ROUTING_DETECTOR         "classifier" (default) or "fr-en-else-wolof" (one rule, no classifier file)
   LINGUANOTE_ROUTING_RULE_THRESHOLD   confidence needed to call a window French or English (rule detector, default 0.77)
   LINGUANOTE_ROUTING_FRENCH_MODEL     Whisper model for French passages (default: LINGUANOTE_WHISPER_MODEL)
@@ -23,6 +25,7 @@ from app.language.rule import FrenchEnglishElseWolofDetector
 from app.language.whisper_lid import WhisperLanguageFeatures
 
 WOLOF_MODEL_ENV = "LINGUANOTE_ROUTING_WOLOF_MODEL"
+LIVE_WOLOF_MODEL_ENV = "LINGUANOTE_ROUTING_LIVE_WOLOF_MODEL"
 CLASSIFIER_ENV = "LINGUANOTE_ROUTING_CLASSIFIER"
 DETECTOR_ENV = "LINGUANOTE_ROUTING_DETECTOR"
 RULE_THRESHOLD_ENV = "LINGUANOTE_ROUTING_RULE_THRESHOLD"
@@ -42,11 +45,13 @@ def detector_kind() -> str:
     return kind
 
 
-def routing_paths() -> tuple[Path, Path | None]:
+def routing_paths(live: bool = False) -> tuple[Path, Path | None]:
     """The configured Wolof model directory and (classifier detector only) classifier file, or
-    ModelUnavailableError saying what is missing."""
+    ModelUnavailableError saying what is missing. Live may use a lighter Wolof model (LIVE_WOLOF_MODEL_ENV)."""
     kind = detector_kind()
     wolof, classifier = os.getenv(WOLOF_MODEL_ENV), os.getenv(CLASSIFIER_ENV)
+    if live:
+        wolof = os.getenv(LIVE_WOLOF_MODEL_ENV) or wolof
     needed = [(WOLOF_MODEL_ENV, wolof)] + ([(CLASSIFIER_ENV, classifier)] if kind == CLASSIFIER_DETECTOR else [])
     missing = [name for name, value in needed if not value]
     if missing:
@@ -83,8 +88,8 @@ def _rule_threshold() -> float:
     return value
 
 
-def build_routing_engine() -> RoutedEngine:
-    wolof_path, classifier_path = routing_paths()
+def build_routing_engine(live: bool = False) -> RoutedEngine:
+    wolof_path, classifier_path = routing_paths(live)
     classifier = _load_classifier(classifier_path) if classifier_path else None
     threshold = None if classifier else _rule_threshold()  # validated before any model is loaded
 

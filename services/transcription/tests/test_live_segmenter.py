@@ -106,3 +106,28 @@ def test_total_seconds_counts_whole_frames_received():
     segmenter = UtteranceSegmenter()
     segmenter.feed(silence(1.0))
     assert segmenter.total_seconds == pytest.approx(1.0)
+
+
+def test_a_minimum_length_keeps_short_pauses_inside_one_utterance():
+    config = SegmenterConfig(min_utterance_seconds=10.0, max_utterance_seconds=20.0)
+    finished = run(UtteranceSegmenter(config), tone(3.0) + silence(1.2) + tone(3.0) + silence(1.2))
+    assert len(finished) == 1  # the 1.2 s pause did not end the passage: it is still shorter than 10 s
+    assert 7.0 <= finished[0].end_seconds - finished[0].start_seconds <= 8.5
+
+
+def test_a_silence_ends_the_utterance_once_the_minimum_length_is_reached():
+    config = SegmenterConfig(min_utterance_seconds=10.0, max_utterance_seconds=20.0)
+    finished = run(UtteranceSegmenter(config), tone(11.0) + silence(1.0) + tone(2.0) + silence(1.0))
+    assert [u.utterance_id for u in finished] == [1, 2]
+    assert loud_frames(finished[0].pcm) == loud_frames(tone(11.0))
+
+
+def test_the_maximum_length_still_cuts_continuous_speech_when_a_minimum_is_set():
+    config = SegmenterConfig(min_utterance_seconds=10.0, max_utterance_seconds=20.0)
+    finished = run(UtteranceSegmenter(config), tone(25.0) + silence(1.0))
+    assert len(finished) == 2 and finished[0].end_seconds <= 20.5
+
+
+def test_the_default_still_ends_an_utterance_at_every_pause():
+    assert SegmenterConfig().min_utterance_seconds == 0.0
+    assert len(run(UtteranceSegmenter(), tone(1.0) + silence(1.0) + tone(1.0) + silence(1.0))) == 2

@@ -65,8 +65,10 @@ class LiveSession:
         segmenter_config: SegmenterConfig | None = None,
         clock: Callable[[], float] = time.monotonic,
         recorder: SessionRecorder | None = None,
+        partials: bool = True,
     ) -> None:
         self.session_id = session_id
+        self._partials = partials  # False: final text only (routing cannot cheaply revise a growing buffer)
         self._recorder = recorder
         self._history_warned = False
         self.engine = engine
@@ -165,7 +167,7 @@ class LiveSession:
         for utterance in self.segmenter.feed(payload):
             if not self._enqueue(("final", utterance)):
                 return FrameResult.ACCEPTED  # the session was aborted as overloaded
-        partial = self.segmenter.due_partial()
+        partial = self.segmenter.due_partial() if self._partials else None
         # A partial is best-effort: skipped when anything is already queued or running.
         if partial is not None and self._jobs.empty() and inference.is_idle():
             self._enqueue(("partial", partial))
