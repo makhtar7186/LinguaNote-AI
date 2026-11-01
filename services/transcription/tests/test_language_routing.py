@@ -254,6 +254,13 @@ def test_a_fallback_passage_is_not_forced_into_the_language_it_was_labelled_with
     assert engines["fr"].hints == ["fr", None]  # only the passage that really is French is told so
 
 
+def test_audio_with_no_detectable_language_is_never_given_a_hint_even_if_the_label_were_listed():
+    engines = {"fr": HintEngine("multi")}
+    r, _ = router(engines, language_hints=frozenset({"fr", "en", UNKNOWN}))
+    r.transcribe_samples(silence(5.0))
+    assert engines["fr"].hints == [None]
+
+
 def test_the_default_label_must_have_an_engine():
     with pytest.raises(ValueError):
         LanguageRouter({"wo": FakeEngine("wolof")}, "fr", FrequencyDetector())

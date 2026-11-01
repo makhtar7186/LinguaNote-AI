@@ -119,6 +119,23 @@ def test_the_rule_threshold_comes_from_the_environment_and_is_validated(configur
             language_routing.build_routing_engine()
 
 
+def test_an_invalid_threshold_is_refused_before_any_model_is_loaded(configured, monkeypatch):
+    loaded = []
+
+    class Counting(FakeWhisper):
+        def __init__(self, model=None):
+            loaded.append(model)
+            super().__init__(model)
+
+    monkeypatch.setattr(language_routing, "FasterWhisperEngine", Counting)
+    monkeypatch.setattr(language_routing, "WhisperLanguageFeatures", lambda *a, **k: loaded.append("lid"))
+    monkeypatch.setenv(language_routing.DETECTOR_ENV, "fr-en-else-wolof")
+    monkeypatch.setenv(language_routing.RULE_THRESHOLD_ENV, "2")
+    with pytest.raises(ModelUnavailableError):
+        language_routing.build_routing_engine()
+    assert loaded == []  # nothing heavy was loaded for a configuration that could never work
+
+
 def test_the_default_detector_is_the_trained_classifier(configured, fake_models, monkeypatch):
     from app.language.classifier import ClassifierDetector
 
