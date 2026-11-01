@@ -123,6 +123,12 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
                 return None
             return session, True, opening.last_event_id
 
+        if settings.engine == "language-routing":
+            # Routing needs whole passages to decide a language; live windows are too short and would be re-routed
+            # one by one at several times real time on CPU. Honest refusal instead of a degraded mode.
+            await _reject(connection, "model_unavailable",
+                          "Language routing is for audio and video files; live transcription needs another engine.")
+            return None
         try:
             engine = await run_in_threadpool(get_engine, settings.engine)
         except ModelUnavailableError as exc:

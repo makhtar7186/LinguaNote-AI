@@ -44,6 +44,18 @@ Mesures initiales : WER pour comparaison usuelle, CER pour mieux observer les va
 
 Comparer deux pistes sans présumer du résultat : un moteur multilingue général pour français/anglais et un candidat distinct couvrant le wolof. Omnilingual ASR répertorie le code `wol_Latn`, mais ses poids ont un coût matériel et de téléchargement substantiel. Ne pas télécharger de modèle avant d’avoir relevé mémoire disponible, GPU et espace disque, choisi les extraits d’évaluation et vérifié les licences. Un modèle déclaré multilingue n’est pas réputé fiable en code-switching sans résultats mesurés.
 
+### Routage par langue (fichiers, moteur optionnel `language-routing`)
+
+Implémenté dans `services/transcription/app/language/` ; mesures et limites dans [evaluation-wolof.md](evaluation-wolof.md). Chaîne de traitement, chaque étape étant un module séparé :
+
+1. `whisper_lid.py` : vecteur des probabilités de langue de Whisper `tiny` sur des fenêtres de 3 s (pas de 1,5 s).
+2. `classifier.py` : régression logistique (numpy seul) qui convertit ce vecteur en français / anglais / wolof ; poids dans un fichier JSON (`LINGUANOTE_ROUTING_CLASSIFIER`).
+3. `segmentation.py` : lissage de Viterbi avec pénalité de changement, fusion des passages de moins de 2 s, frontières ramenées à l'instant le plus silencieux voisin, passages numérotés qui couvrent tout l'audio. Les fenêtres quasi silencieuses (volume < 0,0005) ne sont pas envoyées au détecteur.
+4. `routing.py` : un moteur par passage (modèle multilingue pour français, anglais et langues inconnues ; modèle wolof pour le wolof), isolation des échecs, réassemblage **par numéro de passage**, décalage des temps vers l'enregistrement entier, `warnings` si un passage est perdu.
+5. `engines/language_routing.py` : assemble le tout depuis la configuration et le publie dans le registre. Refusé par le direct (WebSocket) : le routage a besoin de passages entiers.
+
+Le texte reconnu n'est jamais traduit ni corrigé, et la langue de chaque passage est une estimation qui indique le modèle choisi, pas une garantie.
+
 ## Risques spécifiques
 
 - Une langue fournie au modèle au niveau du fichier peut dégrader les mots prononcés dans une autre langue.

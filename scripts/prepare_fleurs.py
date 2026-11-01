@@ -35,7 +35,14 @@ def main() -> int:
         table = pq.read_table(args.dir / filename, columns=["id", "audio", "transcription", "gender"])
         ids, audio = table.column("id").to_pylist(), table.column("audio").to_pylist()
         transcripts, genders = table.column("transcription").to_pylist(), table.column("gender").to_pylist()
-        usable = [i for i, text in enumerate(transcripts) if text and text.strip() and "�" not in text]
+        # The same sentence is read by several speakers (same id): keep one reading, so a sentence never lands in
+        # both the dev and the validation split.
+        seen: set = set()
+        usable = []
+        for i, text in enumerate(transcripts):
+            if text and text.strip() and "�" not in text and ids[i] not in seen:
+                seen.add(ids[i])
+                usable.append(i)
         chosen = random.Random(args.seed).sample(usable, min(args.per_language, len(usable)))
         cut = round(len(chosen) * (1 - args.validation_share))
         for rank, i in enumerate(chosen):

@@ -27,7 +27,10 @@ class SegmentationConfig:
     switch_penalty: float = 1.5
     min_span_seconds: float = 2.0  # shorter spans are merged into a neighbour
     snap_seconds: float = 0.6  # how far a boundary may move to find a quiet instant
-    silence_rms: float = 0.005  # windows quieter than this carry no language information
+    # Windows quieter than this carry no language information. Deliberately close to digital silence (about -66 dBFS):
+    # speech levels vary by 50x between recordings (measured on FLEURS and ALFFA clips, whose speech sits around 0.001
+    # to 0.05 RMS), so a higher absolute threshold turns quiet speech into "silence" and the previous language runs on.
+    silence_rms: float = 0.0005
     frame_seconds: float = 0.02
 
 

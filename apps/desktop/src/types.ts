@@ -2,6 +2,8 @@ export interface Segment {
   start_seconds: number;
   end_seconds: number;
   text: string;
+  /** Estimated language of the passage; only the language-routing engine provides it. */
+  language: string | null;
 }
 
 export interface TranscriptionResponse {
@@ -13,6 +15,8 @@ export interface TranscriptionResponse {
   language: string | null;
   language_probability: number | null;
   segments: Segment[];
+  /** Present when part of the audio could not be transcribed: the text is then incomplete. */
+  warnings: string[];
 }
 
 export interface Limits {

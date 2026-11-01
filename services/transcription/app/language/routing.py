@@ -3,7 +3,8 @@
 Rules that keep the final text honest:
   * chunks are processed and joined by their `index` (time order), never by completion order;
   * a chunk whose language has no dedicated engine goes to the default (multilingual) engine and is reported as such;
-  * a chunk that fails is listed in `failed_chunks` and leaves a gap that is visible in the result, never a silent loss;
+  * a chunk that fails is listed in `failed_chunks` and reported in the result's `warnings`, never a silent loss
+    (when every chunk fails there is nothing honest to return and the engine raises);
   * the original recognised text is preserved: nothing is translated or corrected.
 """
 import logging
@@ -85,8 +86,9 @@ class LanguageRouter:
                 logger.warning("Chunk %d failed (%s)", chunk.index, type(error).__name__)  # never the audio or text
                 return RoutedChunk(chunk, engine_label, fallback, "", (), error=type(error).__name__)
         # times returned by the engine are relative to the chunk: shifted back to the whole recording
+        language = None if chunk.label == UNKNOWN else chunk.label
         shifted = tuple(
-            Segment(chunk.start_seconds + s.start_seconds, chunk.start_seconds + s.end_seconds, s.text)
+            Segment(chunk.start_seconds + s.start_seconds, chunk.start_seconds + s.end_seconds, s.text, language)
             for s in result.segments
         )
         return RoutedChunk(chunk, engine_label, fallback, result.text.strip(), shifted)
@@ -121,10 +123,18 @@ class RoutedEngine:
     def transcribe(self, audio_path: Path) -> TranscriptionResult:
         routed = self.router.transcribe_samples(read_wav(audio_path))
         self.last = routed
+        if routed.chunks and len(routed.failed_chunks) == len(routed.chunks):
+            raise RuntimeError("Every passage of the recording failed to transcribe.")  # nothing to return honestly
         labels = {item.chunk.label for item in routed.chunks if item.text}
         # The single `language` field is only filled when the whole recording is in one language.
         language = labels.pop() if len(labels) == 1 and UNKNOWN not in labels else None
+        failed = {item.chunk.index: item.chunk for item in routed.chunks if item.error}
+        warnings = tuple(
+            f"passage_failed: {chunk.start_seconds:.1f}-{chunk.end_seconds:.1f} s ({chunk.label}) "
+            "is missing from the text"
+            for _, chunk in sorted(failed.items())
+        )
         return TranscriptionResult(
             text=routed.text, engine=self.name, model=self._model, language=language, language_probability=None,
-            segments=routed.segments,
+            segments=routed.segments, warnings=warnings,
         )

@@ -29,7 +29,21 @@ describe("parseTranscription", () => {
     });
     expect(parsed.language).toBeNull();
     expect(parsed.timing_available).toBe(false);
-    expect(parsed.segments).toEqual([{ start_seconds: 0, end_seconds: 1, text: "ok" }]);
+    expect(parsed.segments).toEqual([{ start_seconds: 0, end_seconds: 1, text: "ok", language: null }]);
+    expect(parsed.warnings).toEqual([]);
+  });
+
+  it("keeps the language of each routed segment and the warnings, and ignores wrong types", () => {
+    const parsed = parseTranscription({
+      text: "bonjour waaw", engine: "language-router", model: "small+wolof",
+      segments: [
+        { start_seconds: 0, end_seconds: 1, text: "bonjour", language: "fr" },
+        { start_seconds: 1, end_seconds: 2, text: "waaw", language: 42 },
+      ],
+      warnings: ["passage_failed: 2.0-3.0 s (wo) is missing from the text", 7, null],
+    });
+    expect(parsed.segments.map((segment) => segment.language)).toEqual(["fr", null]);
+    expect(parsed.warnings).toEqual(["passage_failed: 2.0-3.0 s (wo) is missing from the text"]);
   });
 
   it("drops segments with non-finite, negative or reversed timestamps", () => {
@@ -43,7 +57,7 @@ describe("parseTranscription", () => {
         { start_seconds: 1, end_seconds: 2, text: "good" },
       ],
     });
-    expect(parsed.segments).toEqual([{ start_seconds: 1, end_seconds: 2, text: "good" }]);
+    expect(parsed.segments).toEqual([{ start_seconds: 1, end_seconds: 2, text: "good", language: null }]);
   });
 
   it("treats an out-of-range language probability as absent", () => {

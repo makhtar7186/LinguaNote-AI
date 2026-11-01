@@ -67,6 +67,12 @@ Les éditeurs construits sur Electron définissent `ELECTRON_RUN_AS_NODE=1` ; h�
 
 Aucun secret n'est stocké dans le dépôt. `LINGUANOTE_API_TOKEN` se transmet par variable d'environnement (voir `.env.example`). `.env` est ignoré par Git mais n'est pas chargé automatiquement.
 
+Téléchargement des modèles wolof protégés (Kiriku) : un jeton Hugging Face en lecture seule est nécessaire **une seule fois, pour obtenir les poids** (variable `HF_TOKEN` du compte Windows de la personne). L'application ne lit jamais ce jeton et n'en a pas besoin à l'exécution : le moteur `language-routing` ne charge que des dossiers locaux, sans réseau pour le modèle wolof. Un jeton collé dans une conversation ou un fichier doit être révoqué et remplacé.
+
+Moteur `language-routing` : tout le traitement reste local. Le petit modèle Whisper `tiny` qui lit la langue de chaque fenêtre est téléchargé à la première utilisation comme les autres modèles Whisper (voir « Données et traitement »). Le texte et l'audio des passages ne sont jamais écrits dans les journaux : seuls le numéro du passage et le type d'erreur le sont, et les fichiers temporaires de chaque passage sont supprimés à la fin du traitement.
+
 ## Licences des composants
 
 faster-whisper et les poids Whisper sont publiés sous licence MIT ; FFmpeg est externe (non redistribué) : sa licence (LGPL/GPL selon le build) devra être vérifiée avant toute livraison d'un installateur qui l'embarque. Omnilingual ASR (Apache 2.0 annoncé) n'est pas utilisé.
+
+Modèles wolof (optionnels, non inclus dans le dépôt) : `M9and2M/whisper-small-wolof` (MIT), `AIHubSN/Kiriku-Wolof-ASR` et `AIHubSN/M-Kiriku-ASR` (Apache-2.0, accès protégé par acceptation des conditions de l'éditeur). Redistribuer ces poids avec un installateur exige de vérifier leurs conditions d'accès et la provenance de leurs données d'entraînement, qui n'a pas été vérifiée ici. Données d'évaluation et d'entraînement du détecteur de langue : ALFFA wolof (MIT, Gauthier et al., LREC 2016) et FLEURS (CC BY 4.0, Conneau et al., 2022) : conserver l'attribution.

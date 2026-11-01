@@ -53,3 +53,9 @@ footer { text-align:center;color:#a0a8b7;font-size:9px;padding:18px 0 0; }footer
 .history-rename input { flex:1; }
 .history-actions,.history-danger { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px; font-size:11px; color:#5b667f; }
 .text-button.danger { color:#c0392b; }
+.language-passages { list-style:none; margin:12px 0 0; padding:0; display:flex; flex-direction:column; gap:7px; font-size:12px; line-height:1.5; }
+.language-passages li { display:flex; gap:8px; align-items:baseline; }
+.language-badge { flex:none; min-width:58px; text-align:center; border-radius:999px; padding:1px 8px; font-size:10px; font-weight:700; color:#42506b; background:#eef1f7; border:1px solid #dde3ef; }
+.language-wo { color:#7b4a12; background:#fff3e0; border-color:#f1dcb8; }
+.language-fr { color:#1f4f9c; background:#eaf1ff; border-color:#cfdcf6; }
+.language-en { color:#216a45; background:#e9f7ef; border-color:#cde9d9; }

@@ -5,6 +5,8 @@ class SegmentOut(BaseModel):
     start_seconds: float
     end_seconds: float
     text: str
+    # Estimated language of the passage; present only with the language-routing engine.
+    language: str | None = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -17,6 +19,8 @@ class TranscriptionResponse(BaseModel):
     language: str | None = None
     language_probability: float | None = None
     segments: list[SegmentOut] = []
+    # Present when part of the audio could not be transcribed: the text is then incomplete.
+    warnings: list[str] = []
     # Set only when the user turned the history on and the transcription was saved there.
     saved_session_id: str | None = None
 

@@ -11,10 +11,11 @@ Ordre imposé par [AGENTS.md](../AGENTS.md). Légende : fait = implémenté et t
 | API testée (validation, erreurs, jeton, concurrence) | fait (Pytest) |
 | Outillage d'évaluation (manifeste validé, WER/CER micro-moyennés, latence, facteur temps réel, pic mémoire, hallucinations sur silence, rapport) | fait : `python -m app.evaluation` ; 65 tests Pytest passés le 2026-10-30 (ruff propre) |
 | Mesure FR / EN sur corpus **synthétique** (`tiny`, `base`, `small`) | fait : voir [evaluation-results.md](evaluation-results.md). Valide l'outillage et la vitesse, **pas** la qualité sur de vraies voix |
-| Évaluation sur de **vraie parole** FR / EN, **wolof**, **mixte** | **à faire, bloquée par les données** : aucun clip autorisé avec transcription de référence. C'est la condition pour affirmer un support du wolof |
+| Évaluation sur de **vraie parole** FR / EN, **wolof**, **mixte** | **partielle** : parole **lue** seulement (ALFFA wolof, FLEURS), voir [evaluation-wolof.md](evaluation-wolof.md). Whisper seul échoue en wolof ; des modèles ajustés (Kiriku, M9) fonctionnent mais restent faibles hors de leur domaine. Parole spontanée, bruitée, réunions et changement de langue dans une phrase : **non mesurés** |
+| Routage par langue pour les fichiers (détection, découpe, un moteur par passage, réassemblage) | fait pour les **fichiers** (moteur optionnel `language-routing`) : WER de 56 % à 24 % (modèle M9, 10 enregistrements) et de 66 % à 21 % (Kiriku, 4 enregistrements) sur des enregistrements mixtes artificiels (clips lus collés), passages courts (≈ 2 s) mal étiquetés ; **pas de direct**. Voir [evaluation-wolof.md](evaluation-wolof.md) |
 | Comparaison de modèles (`medium`, `large-v3`, autres moteurs) | à faire (poids non téléchargés sans accord) |
 
-Prochaine action côté données : réunir 5 à 10 extraits autorisés par catégorie avec transcription de référence validée (un évaluateur wolophone pour le wolof), les placer dans `data/corpus/` avec un `manifest.csv`, puis relancer l'évaluation.
+Prochaine action côté données : réunir des extraits **spontanés et bruités** autorisés (réunions, conversations mêlant français, wolof et anglais) avec transcription de référence validée par un locuteur wolophone, les placer dans `data/corpus/` avec un `manifest.csv`, puis relancer `scripts/eval_routing.py` et l'évaluation par modèle. Sans cela, on ne peut pas affirmer que le routage tient en conditions réelles.
 
 ## Phase 2 - Transcription en direct (implémentée, validée avec la voix de synthèse)
 
@@ -99,4 +100,4 @@ Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un 
 - Pas de test Playwright / Electron de bout en bout.
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
 - Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.
-- Aucune mesure sur de la **parole réelle** (phase 1 : seul un corpus synthétique FR/EN a été mesuré) : le support du wolof et du code-switching reste non démontré.
+- Aucune mesure sur de la **parole spontanée ou bruitée** : seules de la parole lue (ALFFA, FLEURS) et un corpus synthétique FR/EN ont été mesurés. Le wolof est reconnu par des modèles dédiés avec des erreurs importantes hors de leur domaine, et le changement de langue **dans une phrase** reste non démontré.

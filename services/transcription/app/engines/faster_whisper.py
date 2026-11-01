@@ -10,8 +10,9 @@ class FasterWhisperEngine:
     name = "faster-whisper"
     capabilities = EngineCapabilities(timestamps=True, language_detection=True)
 
-    def __init__(self) -> None:
-        self.model = os.getenv("LINGUANOTE_WHISPER_MODEL", "base")
+    def __init__(self, model: str | None = None) -> None:
+        # An explicit model lets several instances coexist (language routing); the default stays the environment.
+        self.model = model or os.getenv("LINGUANOTE_WHISPER_MODEL", "base")
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:

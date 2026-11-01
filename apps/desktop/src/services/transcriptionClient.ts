@@ -28,8 +28,12 @@ function parseSegments(value: unknown): Segment[] {
     const start = optNumber(item.start_seconds);
     const end = optNumber(item.end_seconds);
     if (start === null || end === null || start < 0 || end < start) return [];
-    return [{ start_seconds: start, end_seconds: end, text: item.text }];
+    return [{ start_seconds: start, end_seconds: end, text: item.text, language: optString(item.language) }];
   });
+}
+
+function parseWarnings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 /** A probability outside [0, 1] is a malformed value, not a confidence score. */
@@ -53,6 +57,7 @@ export function parseTranscription(value: unknown): TranscriptionResponse {
     language: optString(value.language),
     language_probability: parseProbability(value.language_probability),
     segments: parseSegments(value.segments),
+    warnings: parseWarnings(value.warnings),
   };
 }
 

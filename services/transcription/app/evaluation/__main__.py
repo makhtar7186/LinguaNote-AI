@@ -6,6 +6,7 @@ peak-memory figure belongs to that model alone. No model is downloaded unless --
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -80,7 +81,8 @@ def _run(args: argparse.Namespace) -> int:
     out.mkdir(parents=True, exist_ok=True)
     runs = []
     for model in [m.strip() for m in args.models.split(",") if m.strip()]:
-        target = out / f"{args.engine}-{model}.json"
+        # a model may be a local directory: keep only characters that are safe in a file name
+        target = out / f"{args.engine}-{re.sub(r'[^A-Za-z0-9._-]+', '_', Path(model).name or model)}.json"
         command = [
             sys.executable, "-m", "app.evaluation", "_single", "--manifest", args.manifest,
             "--engine", args.engine, "--model", model, "--out-json", str(target),

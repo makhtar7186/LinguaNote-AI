@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { InsertionControl } from "./components/InsertionControl";
+import { LanguagePassages } from "./components/LanguagePassages";
 import { LevelMeter, SilenceWarning, SourcePicker } from "./components/SourcePicker";
 import { useCapturePreferences, useMicrophones } from "./hooks/useCapturePreferences";
 import { useLiveTranscription } from "./hooks/useLiveTranscription";
@@ -242,7 +243,14 @@ export default function App() {
         {result && (
           <section className="result-card" aria-live="polite">
             <div className="result-heading"><div><p className="eyebrow">RÉSULTAT</p><h2>Transcription</h2></div><button className="text-button" onClick={() => void copyTranscript()}>Copier le texte</button></div>
+            {result.warnings.length > 0 && (
+              <div className="notice error-notice" role="alert">
+                Transcription incomplète : {result.warnings.length} passage(s) n’ont pas pu être transcrits.
+                <ul>{result.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+              </div>
+            )}
             <p className="transcript-text">{result.text || "Aucun texte reconnu."}</p>
+            <LanguagePassages segments={result.segments} />
             <div className="result-meta">
               {result.engine} · {result.model}
               {result.language ? ` · langue estimée : ${result.language}${result.language_probability !== null ? ` (${Math.round(result.language_probability * 100)} %)` : ""}` : ""}

@@ -29,7 +29,8 @@ class FrequencyDetector:
 
     def detect(self, samples):
         self.calls += 1
-        voiced = samples[np.abs(samples) > 0.01]  # pauses carry no language, like for a real detector
+        # pauses carry no language, like for a real detector; relative to the window's peak so level does not matter
+        voiced = samples[np.abs(samples) > 0.05 * np.abs(samples).max()]
         signs = np.signbit(voiced)
         crossings = np.count_nonzero(signs[1:] != signs[:-1])
         hz = crossings / 2 / (len(voiced) / SAMPLE_RATE)
@@ -107,6 +108,14 @@ def test_silent_windows_are_not_sent_to_the_detector():
     detector = FrequencyDetector()
     segment_by_language(audio(tone(3.0, FR_HZ), silence(30.0), tone(3.0, FR_HZ)), detector)
     assert detector.calls < 12  # a 36 s file with 30 s of silence is not 24 detections
+
+
+def test_quiet_speech_is_not_mistaken_for_silence():
+    # Measured on real corpora: some recordings sit around 0.001 RMS while others sit around 0.05. The quiet one must
+    # still reach the detector, or the previous language silently runs over it.
+    samples = audio(tone(6.0, FR_HZ, 0.05), silence(1.0), tone(6.0, WO_HZ, 0.002))
+    chunks = segment_by_language(samples, FrequencyDetector())
+    assert [c.label for c in chunks] == ["fr", "wo"]
 
 
 # -- routing --------------------------------------------------------------------------------------------------
@@ -199,6 +208,31 @@ def test_the_routed_engine_reports_a_language_only_for_a_single_language_recordi
     r, _ = router()
     write_wav(tmp_path / "wolof.wav", tone(6.0, WO_HZ))
     assert RoutedEngine(r).transcribe(tmp_path / "wolof.wav").language == "wo"
+
+
+def test_every_segment_carries_the_language_it_was_routed_under(tmp_path):
+    r, _ = router()
+    write_wav(tmp_path / "mixed.wav", audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ)))
+    result = RoutedEngine(r).transcribe(tmp_path / "mixed.wav")
+    assert [s.language for s in result.segments] == ["fr", "wo"]
+    assert result.warnings == ()
+
+
+def test_a_lost_passage_is_a_warning_in_the_result_not_a_silent_gap(tmp_path):
+    engines = {"fr": FakeEngine("multi"), "wo": FakeEngine("wolof", fail=True)}
+    r, _ = router(engines)
+    write_wav(tmp_path / "mixed.wav", audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ), silence(0.8), tone(5.0, FR_HZ)))
+    result = RoutedEngine(r).transcribe(tmp_path / "mixed.wav")
+    assert len(result.warnings) == 1 and result.warnings[0].startswith("passage_failed:") and "(wo)" in result.warnings[0]
+    assert "private text" not in result.warnings[0]
+    assert result.text.count("[multi") == 2
+
+
+def test_when_every_passage_fails_the_engine_raises_instead_of_returning_an_empty_text(tmp_path):
+    r, _ = router({"fr": FakeEngine("multi", fail=True), "wo": FakeEngine("wolof", fail=True)})
+    write_wav(tmp_path / "mixed.wav", audio(tone(5.0, FR_HZ), silence(0.8), tone(5.0, WO_HZ)))
+    with pytest.raises(RuntimeError):
+        RoutedEngine(r).transcribe(tmp_path / "mixed.wav")
 
 
 def test_the_routed_engine_refuses_audio_that_is_not_normalised(tmp_path):

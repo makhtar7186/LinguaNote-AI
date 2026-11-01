@@ -50,6 +50,8 @@ Réponse `200` :
 - `language` et `language_probability` sont des **estimations** du moteur pour l'ensemble du fichier. Elles peuvent être `null`.
 - `timing_available` n'est vrai que si le moteur fournit réellement des segments.
 - Un audio sans parole détectée renvoie `text: ""` et `segments: []`.
+- `segments[].language` (chaîne ou `null`, par défaut absent des moteurs classiques) : langue **estimée** du passage, fournie uniquement par le moteur `language-routing` (`fr`, `en`, `wo`). Quand elle est présente, `language` au niveau du fichier n'est renseigné que si tout l'enregistrement est dans une seule langue. Cette étiquette indique le modèle choisi pour le passage, pas une garantie que la langue est la bonne.
+- `warnings` (liste de chaînes, vide par défaut) : non vide quand une partie de l'audio n'a pas pu être transcrite (`passage_failed: 12.0-15.5 s (wo) is missing from the text`). Le texte est alors **incomplet** ; si tous les passages échouent, le moteur renvoie une erreur `500` plutôt qu'un texte vide.
 - Le texte n'est jamais traduit ni corrigé.
 - `saved_session_id` (chaîne ou `null`) : identifiant de la session créée dans l'historique, **uniquement si l'historique est activé** et que l'enregistrement a réussi. Un échec de stockage ne fait jamais échouer la transcription (le champ vaut alors `null`). Le nom du fichier envoyé n'est jamais conservé.
 

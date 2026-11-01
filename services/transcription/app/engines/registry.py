@@ -15,8 +15,11 @@ def _build(engine_name: str) -> SpeechEngine:
     if engine_name == "omnilingual-ctc":
         from app.engines.omnilingual_ctc import OmnilingualCtcEngine
         return OmnilingualCtcEngine()
+    if engine_name == "language-routing":
+        from app.engines.language_routing import build_routing_engine
+        return build_routing_engine()
     raise ModelUnavailableError(
-        f"Unknown ASR engine '{engine_name}'. Choose faster-whisper or omnilingual-ctc."
+        f"Unknown ASR engine '{engine_name}'. Choose faster-whisper, omnilingual-ctc or language-routing."
     )
 
 
@@ -33,6 +36,9 @@ def capabilities_for(engine_name: str) -> EngineCapabilities | None:
     if engine_name == "omnilingual-ctc":
         from app.engines.omnilingual_ctc import OmnilingualCtcEngine
         return OmnilingualCtcEngine.capabilities
+    if engine_name == "language-routing":
+        from app.language.routing import RoutedEngine
+        return RoutedEngine.capabilities
     return None
 
 

@@ -13,6 +13,8 @@ class Segment:
     start_seconds: float
     end_seconds: float
     text: str
+    # Language the segment was routed under (an estimate); only set by engines that detect it per passage.
+    language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,8 @@ class TranscriptionResult:
     language: str | None = None
     language_probability: float | None = None
     segments: tuple[Segment, ...] = field(default_factory=tuple)
+    # Things the caller must know about a result that is otherwise returned normally (e.g. a passage that failed).
+    warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
 class SpeechEngine(Protocol):

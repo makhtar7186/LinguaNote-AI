@@ -41,6 +41,15 @@ def describe_engine(settings: Settings) -> tuple[bool, str | None, str | None]:
         return available, model if available else None, (
             None if available else "Omnilingual is experimental and unavailable in this Windows installation."
         )
+    if settings.engine == "language-routing":
+        from app.engines.language_routing import routing_paths
+        try:
+            routing_paths()
+        except ModelUnavailableError as exc:
+            return False, None, str(exc)
+        if find_spec("faster_whisper") is None:
+            return False, None, "Install the optional Windows ASR dependencies."
+        return True, f"{os.getenv('LINGUANOTE_WHISPER_MODEL', 'base')}+wolof", None
     return False, None, "No supported ASR engine is selected."
 
 
@@ -83,9 +92,11 @@ def save_file_transcription(
         return None
     if result.segments:
         for segment in result.segments:
+            # A routed segment keeps its own language label; the recording-level estimate has no probability for it.
             recorder.segment(
                 text=segment.text, start_seconds=segment.start_seconds, end_seconds=segment.end_seconds,
-                language=result.language, language_probability=result.language_probability,
+                language=segment.language or result.language,
+                language_probability=None if segment.language else result.language_probability,
             )
     elif result.text.strip():
         # No timing from the engine: stored as such, never invented.
@@ -165,8 +176,9 @@ def build_router(settings: Settings, history: HistoryRepository | None = None) -
                 timing_available=engine.capabilities.timestamps and bool(result.segments),
                 language=result.language,
                 language_probability=result.language_probability,
-                segments=[SegmentOut(start_seconds=s.start_seconds, end_seconds=s.end_seconds, text=s.text)
-                          for s in result.segments],
+                segments=[SegmentOut(start_seconds=s.start_seconds, end_seconds=s.end_seconds, text=s.text,
+                                     language=s.language) for s in result.segments],
+                warnings=list(result.warnings),
             )
         except ApiError as exc:
             logger.warning("Upload rejected ext=%s status=%d code=%s", extension, exc.status_code, exc.code)

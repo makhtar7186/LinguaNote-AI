@@ -1,0 +1,98 @@
+{
+ "lid_model": "tiny",
+ "seconds": 3.0,
+ "validation_all": {
+  "accuracy": 0.9682203389830508,
+  "per_class": {
+   "en": 0.9743589743589743,
+   "fr": 0.9826086956521739,
+   "wo": 0.9622641509433962
+  },
+  "confusion": {
+   "en": {
+    "en": 38,
+    "fr": 0,
+    "wo": 1
+   },
+   "fr": {
+    "en": 1,
+    "fr": 113,
+    "wo": 1
+   },
+   "wo": {
+    "en": 1,
+    "fr": 11,
+    "wo": 306
+   }
+  },
+  "windows": 472
+ },
+ "validation_alffa_wolof": {
+  "accuracy": 0.9649122807017544,
+  "per_class": {
+   "wo": 0.9649122807017544
+  },
+  "confusion": {
+   "wo": {
+    "en": 0,
+    "fr": 10,
+    "wo": 275
+   }
+  },
+  "windows": 285
+ },
+ "validation_fleurs": {
+  "accuracy": 0.9732620320855615,
+  "per_class": {
+   "en": 0.9743589743589743,
+   "fr": 0.9826086956521739,
+   "wo": 0.9393939393939394
+  },
+  "confusion": {
+   "en": {
+    "en": 38,
+    "fr": 0,
+    "wo": 1
+   },
+   "fr": {
+    "en": 1,
+    "fr": 113,
+    "wo": 1
+   },
+   "wo": {
+    "en": 1,
+    "fr": 1,
+    "wo": 31
+   }
+  },
+  "windows": 187
+ },
+ "cross_fleurs_to_alffa_wolof": {
+  "accuracy": 0.979253112033195,
+  "per_class": {
+   "wo": 0.979253112033195
+  },
+  "confusion": {
+   "wo": {
+    "en": 5,
+    "fr": 10,
+    "wo": 708
+   }
+  },
+  "windows": 723
+ },
+ "cross_alffa_wolof_to_fleurs": {
+  "accuracy": 0.9047619047619048,
+  "per_class": {
+   "wo": 0.9047619047619048
+  },
+  "confusion": {
+   "wo": {
+    "en": 8,
+    "fr": 2,
+    "wo": 95
+   }
+  },
+  "windows": 105
+ }
+}

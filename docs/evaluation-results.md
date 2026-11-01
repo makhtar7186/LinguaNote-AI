@@ -1,6 +1,6 @@
 # Résultats d'évaluation — phase 1 (préliminaires)
 
-Ces résultats **valident l'outillage d'évaluation** et donnent des **ordres de grandeur exploratoires** de vitesse et de mémoire sur la machine de développement. Ils ne mesurent pas la qualité de reconnaissance sur de vraies voix, et ils ne disent **rien** du wolof ni du code-switching : aucun clip wolof ni mixte n'existe encore dans le corpus (0 extrait).
+Ces résultats **valident l'outillage d'évaluation** et donnent des **ordres de grandeur exploratoires** de vitesse et de mémoire sur la machine de développement. Ils ne mesurent pas la qualité de reconnaissance sur de vraies voix, et ils ne disent **rien** du wolof ni du code-switching : le corpus synthétique de cette phase ne contient aucun clip wolof ni mixte. Les mesures sur du wolof (corpus ALFFA et FLEURS, parole lue) et sur le routage par langue sont dans [evaluation-wolof.md](evaluation-wolof.md).
 
 Les données brutes (un JSON par modèle et par passage, avec versions logicielles, machine et texte reconnu) sont archivées dans [eval-results/2026-10-30-synthetic/](eval-results/2026-10-30-synthetic/) : on peut recalculer chaque chiffre ci-dessous à partir de ces fichiers.
 
@@ -35,8 +35,8 @@ Erreurs restantes (français uniquement) : `tiny` écrit « par » pour « part 
 ## Ce qui n'est pas mesuré
 
 - Vraie parole : accents, bruit, débit spontané, locuteurs variés.
-- Wolof : 0 clip. Whisper ne documente pas de prise en charge validée du wolof ; rien ici ne la confirme ni ne l'infirme.
-- Code-switching (alternance dans une phrase) : 0 clip.
+- Wolof : 0 clip dans ce corpus synthétique ; voir [evaluation-wolof.md](evaluation-wolof.md) pour les mesures faites ensuite (Whisper seul échoue en wolof).
+- Code-switching (alternance dans une phrase) : 0 clip ici, et non mesuré non plus dans evaluation-wolof.md (seuls des clips lus collés bout à bout y sont testés).
 - Omnilingual (candidat wolof) : non installable sur cet environnement Windows (voir [model-selection.md](model-selection.md)).
 - Détection de langue par fenêtre courte, mots perdus ou dupliqués aux frontières, hallucinations sur bruit.
 - Traitement en direct par blocs, mémoire propre au modèle, répétabilité des temps (un passage par clip, ordre fixe, cache disque et thermique non contrôlés).
