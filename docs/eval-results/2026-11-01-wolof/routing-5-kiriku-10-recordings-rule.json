@@ -1,0 +1,777 @@
+{
+ "summary": {
+  "recordings": 10,
+  "wer": {
+   "multilingual": null,
+   "wolof-only": null,
+   "routed": 0.16584564860426929,
+   "oracle": null
+  },
+  "seconds_of_processing": {
+   "multilingual": 0.0,
+   "wolof-only": 0.0,
+   "routed": 818.6778446999961,
+   "oracle": 0.0
+  },
+  "speech_labelled_correctly": 0.9331650065009205,
+  "language_changes": 33,
+  "changes_missed_or_more_than_1.5s_off": 3,
+  "median_boundary_error_seconds": 0.5054687500000004,
+  "max_boundary_error_seconds": 1.9771874999999994,
+  "spurious_boundaries": 15,
+  "language_hints": false,
+  "detector": "rule",
+  "rule_threshold": 0.77,
+  "classifier": null,
+  "wolof_model": "data/models/kiriku-wolof-ct2",
+  "multilingual_model": "small"
+ },
+ "recordings": [
+  {
+   "recording": 0,
+   "seconds": 56.255375,
+   "truth": [
+    {
+     "label": "wo",
+     "start": 0.0,
+     "end": 16.8,
+     "id": "fleurs_wo_1812"
+    },
+    {
+     "label": "en",
+     "start": 17.2988125,
+     "end": 25.6388125,
+     "id": "fleurs_en_1740"
+    },
+    {
+     "label": "fr",
+     "start": 26.0819375,
+     "end": 35.5019375,
+     "id": "fleurs_fr_1922"
+    },
+    {
+     "label": "wo",
+     "start": 36.010124999999995,
+     "end": 49.99012499999999,
+     "id": "fleurs_wo_1695"
+    },
+    {
+     "label": "en",
+     "start": 50.61537499999999,
+     "end": 56.255374999999994,
+     "id": "fleurs_en_1909"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "wo",
+     "start": 0.0,
+     "end": 17.32,
+     "confidence": 0.9998798970568824
+    },
+    {
+     "label": "en",
+     "start": 17.32,
+     "end": 24.34,
+     "confidence": 0.9838911602873202
+    },
+    {
+     "label": "fr",
+     "start": 24.34,
+     "end": 35.28,
+     "confidence": 0.9759911768250681
+    },
+    {
+     "label": "wo",
+     "start": 35.28,
+     "end": 50.66,
+     "confidence": 0.9999377321418889
+    },
+    {
+     "label": "en",
+     "start": 50.66,
+     "end": 56.255375,
+     "confidence": 0.9830140111910848
+    }
+   ]
+  },
+  {
+   "recording": 1,
+   "seconds": 29.825875,
+   "truth": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 8.64,
+     "id": "fleurs_en_1992"
+    },
+    {
+     "label": "wo",
+     "start": 9.235687500000001,
+     "end": 12.387687500000002,
+     "id": "alffa_wo_01826"
+    },
+    {
+     "label": "wo",
+     "start": 12.969625000000002,
+     "end": 17.790625000000002,
+     "id": "alffa_wo_00700"
+    },
+    {
+     "label": "wo",
+     "start": 18.4500625,
+     "end": 23.3860625,
+     "id": "alffa_wo_01306"
+    },
+    {
+     "label": "fr",
+     "start": 24.005875,
+     "end": 29.825875,
+     "id": "fleurs_fr_1731"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 8.62,
+     "confidence": 0.9839711271501643
+    },
+    {
+     "label": "wo",
+     "start": 8.62,
+     "end": 24.5,
+     "confidence": 0.9999955319239908
+    },
+    {
+     "label": "fr",
+     "start": 24.5,
+     "end": 29.825875,
+     "confidence": 0.7521389445824512
+    }
+   ]
+  },
+  {
+   "recording": 2,
+   "seconds": 57.29925,
+   "truth": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 14.22,
+     "id": "fleurs_fr_1968"
+    },
+    {
+     "label": "fr",
+     "start": 14.671375000000001,
+     "end": 27.151375,
+     "id": "fleurs_fr_1877"
+    },
+    {
+     "label": "wo",
+     "start": 27.9344375,
+     "end": 47.914437500000005,
+     "id": "fleurs_wo_1897"
+    },
+    {
+     "label": "en",
+     "start": 48.65925000000001,
+     "end": 57.29925000000001,
+     "id": "fleurs_en_1709"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 26.82,
+     "confidence": 0.9400306057732017
+    },
+    {
+     "label": "wo",
+     "start": 26.82,
+     "end": 48.72,
+     "confidence": 0.9901934090942267
+    },
+    {
+     "label": "en",
+     "start": 48.72,
+     "end": 57.29925,
+     "confidence": 0.9805043024599587
+    }
+   ]
+  },
+  {
+   "recording": 3,
+   "seconds": 71.807875,
+   "truth": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 7.14,
+     "id": "fleurs_fr_1662"
+    },
+    {
+     "label": "fr",
+     "start": 7.9253124999999995,
+     "end": 21.1253125,
+     "id": "fleurs_fr_1960"
+    },
+    {
+     "label": "en",
+     "start": 21.778125,
+     "end": 33.058125,
+     "id": "fleurs_en_1919"
+    },
+    {
+     "label": "en",
+     "start": 33.65893749999999,
+     "end": 40.67893749999999,
+     "id": "fleurs_en_1742"
+    },
+    {
+     "label": "wo",
+     "start": 41.42712499999999,
+     "end": 55.587124999999986,
+     "id": "fleurs_wo_1987"
+    },
+    {
+     "label": "wo",
+     "start": 56.08787499999998,
+     "end": 71.80787499999998,
+     "id": "fleurs_wo_1715"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 21.8,
+     "confidence": 0.9744991032773809
+    },
+    {
+     "label": "en",
+     "start": 21.8,
+     "end": 41.44,
+     "confidence": 0.8965080773005297
+    },
+    {
+     "label": "wo",
+     "start": 41.44,
+     "end": 71.807875,
+     "confidence": 0.9677225667636516
+    }
+   ]
+  },
+  {
+   "recording": 4,
+   "seconds": 46.191,
+   "truth": [
+    {
+     "label": "wo",
+     "start": 0.0,
+     "end": 4.479,
+     "id": "alffa_wo_00473"
+    },
+    {
+     "label": "fr",
+     "start": 5.146375,
+     "end": 16.786375,
+     "id": "fleurs_fr_1855"
+    },
+    {
+     "label": "wo",
+     "start": 17.266375,
+     "end": 22.116374999999998,
+     "id": "alffa_wo_00959"
+    },
+    {
+     "label": "fr",
+     "start": 22.759624999999996,
+     "end": 35.119625,
+     "id": "fleurs_fr_1993"
+    },
+    {
+     "label": "wo",
+     "start": 35.8005625,
+     "end": 39.170562499999996,
+     "id": "alffa_wo_01115"
+    },
+    {
+     "label": "en",
+     "start": 39.590999999999994,
+     "end": 46.190999999999995,
+     "id": "fleurs_en_1905"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "wo",
+     "start": 0.0,
+     "end": 5.18,
+     "confidence": 0.9999997367740012
+    },
+    {
+     "label": "fr",
+     "start": 5.18,
+     "end": 16.72,
+     "confidence": 0.9753203158491648
+    },
+    {
+     "label": "wo",
+     "start": 16.72,
+     "end": 22.78,
+     "confidence": 0.9999994137149106
+    },
+    {
+     "label": "fr",
+     "start": 22.78,
+     "end": 34.14,
+     "confidence": 0.9805110798416746
+    },
+    {
+     "label": "wo",
+     "start": 34.14,
+     "end": 39.7,
+     "confidence": 0.9999038300392085
+    },
+    {
+     "label": "en",
+     "start": 39.7,
+     "end": 46.191,
+     "confidence": 0.8532324521356798
+    }
+   ]
+  },
+  {
+   "recording": 5,
+   "seconds": 41.24475,
+   "truth": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 9.36,
+     "id": "fleurs_fr_1935"
+    },
+    {
+     "label": "wo",
+     "start": 9.7924375,
+     "end": 15.492437500000001,
+     "id": "alffa_wo_01152"
+    },
+    {
+     "label": "wo",
+     "start": 16.055062500000002,
+     "end": 19.2580625,
+     "id": "alffa_wo_00254"
+    },
+    {
+     "label": "en",
+     "start": 19.685000000000002,
+     "end": 26.705000000000002,
+     "id": "fleurs_en_1742"
+    },
+    {
+     "label": "wo",
+     "start": 27.387375000000002,
+     "end": 31.885375000000003,
+     "id": "alffa_wo_01426"
+    },
+    {
+     "label": "en",
+     "start": 32.60475,
+     "end": 41.24475,
+     "id": "fleurs_en_1992"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "wo",
+     "start": 0.0,
+     "end": 2.38,
+     "confidence": 0.9976392471917768
+    },
+    {
+     "label": "fr",
+     "start": 2.38,
+     "end": 8.7,
+     "confidence": 0.9877247467613179
+    },
+    {
+     "label": "wo",
+     "start": 8.7,
+     "end": 19.92,
+     "confidence": 0.9999861354921702
+    },
+    {
+     "label": "en",
+     "start": 19.92,
+     "end": 27.32,
+     "confidence": 0.8855375461902206
+    },
+    {
+     "label": "wo",
+     "start": 27.32,
+     "end": 32.68,
+     "confidence": 0.9999991007412049
+    },
+    {
+     "label": "en",
+     "start": 32.68,
+     "end": 41.24475,
+     "confidence": 0.9681620288662993
+    }
+   ]
+  },
+  {
+   "recording": 6,
+   "seconds": 49.9209375,
+   "truth": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 6.6,
+     "id": "fleurs_en_1905"
+    },
+    {
+     "label": "fr",
+     "start": 7.310499999999999,
+     "end": 19.670499999999997,
+     "id": "fleurs_fr_1673"
+    },
+    {
+     "label": "fr",
+     "start": 20.3609375,
+     "end": 26.3009375,
+     "id": "fleurs_fr_1982"
+    },
+    {
+     "label": "en",
+     "start": 26.789,
+     "end": 38.069,
+     "id": "fleurs_en_1919"
+    },
+    {
+     "label": "fr",
+     "start": 38.811375000000005,
+     "end": 45.951375000000006,
+     "id": "fleurs_fr_1662"
+    },
+    {
+     "label": "wo",
+     "start": 46.39293750000001,
+     "end": 49.92093750000001,
+     "id": "alffa_wo_01340"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 6.28,
+     "confidence": 0.9182894034665361
+    },
+    {
+     "label": "fr",
+     "start": 6.28,
+     "end": 24.5,
+     "confidence": 0.9708935842887726
+    },
+    {
+     "label": "wo",
+     "start": 24.5,
+     "end": 28.12,
+     "confidence": 0.9914857088371516
+    },
+    {
+     "label": "en",
+     "start": 28.12,
+     "end": 39.82,
+     "confidence": 0.8483134049156212
+    },
+    {
+     "label": "fr",
+     "start": 39.82,
+     "end": 45.88,
+     "confidence": 0.9794603391091531
+    },
+    {
+     "label": "wo",
+     "start": 45.88,
+     "end": 49.9209375,
+     "confidence": 0.9999995846870648
+    }
+   ]
+  },
+  {
+   "recording": 7,
+   "seconds": 49.207125,
+   "truth": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 6.3,
+     "id": "fleurs_en_1858"
+    },
+    {
+     "label": "fr",
+     "start": 7.0309375,
+     "end": 21.910937500000003,
+     "id": "fleurs_fr_1813"
+    },
+    {
+     "label": "en",
+     "start": 22.581437500000003,
+     "end": 28.761437500000003,
+     "id": "fleurs_en_1882"
+    },
+    {
+     "label": "wo",
+     "start": 29.419500000000003,
+     "end": 35.1195,
+     "id": "alffa_wo_01152"
+    },
+    {
+     "label": "fr",
+     "start": 35.817687500000005,
+     "end": 41.637687500000006,
+     "id": "fleurs_fr_1731"
+    },
+    {
+     "label": "en",
+     "start": 42.307125000000006,
+     "end": 49.207125000000005,
+     "id": "fleurs_en_2003"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "en",
+     "start": 0.0,
+     "end": 6.16,
+     "confidence": 0.9723976233417815
+    },
+    {
+     "label": "fr",
+     "start": 6.16,
+     "end": 20.78,
+     "confidence": 0.9833119656723259
+    },
+    {
+     "label": "en",
+     "start": 20.78,
+     "end": 28.66,
+     "confidence": 0.8150339963153342
+    },
+    {
+     "label": "wo",
+     "start": 28.66,
+     "end": 36.32,
+     "confidence": 0.9993826644825152
+    },
+    {
+     "label": "fr",
+     "start": 36.32,
+     "end": 41.4,
+     "confidence": 0.9585385780771274
+    },
+    {
+     "label": "en",
+     "start": 41.4,
+     "end": 49.207125,
+     "confidence": 0.8992823875018012
+    }
+   ]
+  },
+  {
+   "recording": 8,
+   "seconds": 89.4050625,
+   "truth": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 12.36,
+     "id": "fleurs_fr_1673"
+    },
+    {
+     "label": "fr",
+     "start": 12.9434375,
+     "end": 25.3034375,
+     "id": "fleurs_fr_1673"
+    },
+    {
+     "label": "fr",
+     "start": 25.871750000000002,
+     "end": 41.11175,
+     "id": "fleurs_fr_1924"
+    },
+    {
+     "label": "fr",
+     "start": 41.9114375,
+     "end": 54.391437499999995,
+     "id": "fleurs_fr_1877"
+    },
+    {
+     "label": "fr",
+     "start": 55.160687499999995,
+     "end": 69.74068749999999,
+     "id": "fleurs_fr_1998"
+    },
+    {
+     "label": "en",
+     "start": 70.38506249999999,
+     "end": 89.40506249999999,
+     "id": "fleurs_en_1784"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 11.4,
+     "confidence": 0.9859240446219194
+    },
+    {
+     "label": "wo",
+     "start": 11.4,
+     "end": 14.1,
+     "confidence": 0.9993193017422177
+    },
+    {
+     "label": "fr",
+     "start": 14.1,
+     "end": 24.34,
+     "confidence": 0.986905625596255
+    },
+    {
+     "label": "wo",
+     "start": 24.34,
+     "end": 27.68,
+     "confidence": 0.9999694780889475
+    },
+    {
+     "label": "fr",
+     "start": 27.68,
+     "end": 40.3,
+     "confidence": 0.9803278279435413
+    },
+    {
+     "label": "wo",
+     "start": 40.3,
+     "end": 42.2,
+     "confidence": 0.9878357247758711
+    },
+    {
+     "label": "fr",
+     "start": 42.2,
+     "end": 53.82,
+     "confidence": 0.9819261671848454
+    },
+    {
+     "label": "wo",
+     "start": 53.82,
+     "end": 59.06,
+     "confidence": 0.9971171841099169
+    },
+    {
+     "label": "fr",
+     "start": 59.06,
+     "end": 64.82,
+     "confidence": 0.9858247736059262
+    },
+    {
+     "label": "wo",
+     "start": 64.82,
+     "end": 70.72,
+     "confidence": 0.9912601988867873
+    },
+    {
+     "label": "en",
+     "start": 70.72,
+     "end": 89.4050625,
+     "confidence": 0.9596878151026221
+    }
+   ]
+  },
+  {
+   "recording": 9,
+   "seconds": 54.791,
+   "truth": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 5.4,
+     "id": "fleurs_fr_1828"
+    },
+    {
+     "label": "fr",
+     "start": 5.8950000000000005,
+     "end": 15.975000000000001,
+     "id": "fleurs_fr_1713"
+    },
+    {
+     "label": "en",
+     "start": 16.770375,
+     "end": 25.410375000000002,
+     "id": "fleurs_en_1992"
+    },
+    {
+     "label": "fr",
+     "start": 25.948,
+     "end": 41.188,
+     "id": "fleurs_fr_1924"
+    },
+    {
+     "label": "wo",
+     "start": 41.646375,
+     "end": 45.368375,
+     "id": "alffa_wo_01767"
+    },
+    {
+     "label": "fr",
+     "start": 46.031,
+     "end": 54.791,
+     "id": "fleurs_fr_1956"
+    }
+   ],
+   "predicted": [
+    {
+     "label": "fr",
+     "start": 0.0,
+     "end": 17.04,
+     "confidence": 0.9461155049998766
+    },
+    {
+     "label": "en",
+     "start": 17.04,
+     "end": 25.14,
+     "confidence": 0.9824010520239735
+    },
+    {
+     "label": "wo",
+     "start": 25.14,
+     "end": 27.76,
+     "confidence": 0.9994412074917791
+    },
+    {
+     "label": "fr",
+     "start": 27.76,
+     "end": 39.44,
+     "confidence": 0.9774749542280952
+    },
+    {
+     "label": "wo",
+     "start": 39.44,
+     "end": 47.08,
+     "confidence": 0.900090410329206
+    },
+    {
+     "label": "fr",
+     "start": 47.08,
+     "end": 54.791,
+     "confidence": 0.9841420458370307
+    }
+   ]
+  }
+ ]
+}

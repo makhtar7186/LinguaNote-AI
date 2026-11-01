@@ -2,7 +2,7 @@
 
 Ce document remplace, pour le wolof, le constat « 0 clip » de [evaluation-results.md](evaluation-results.md) (phase 1, corpus synthétique FR/EN). Les données brutes agrégées sont archivées dans [eval-results/2026-11-01-wolof/](eval-results/2026-11-01-wolof/) : résumés de chaque exécution et tableaux par modèle. Elles ne contiennent aucun audio ni texte de corpus.
 
-**À retenir.** Les modèles Whisper tiny, base et small, qui sont les seuls mesurés ici, donnent un WER de 99 % ou plus sur du wolof lu : leur texte est inutilisable. Les tailles plus grandes n'ont pas été mesurées et rien n'autorise à les croire meilleures ou pires. Des modèles ajustés au wolof existent et sont nettement meilleurs, surtout un modèle large, au prix d'une lenteur importante sur processeur. Un routage par langue qui envoie les passages wolof à un tel modèle fait passer le WER de 56,0 % à 23,6 % avec le petit modèle M9 (facteur ≈ 2,4, 10 enregistrements) et de 65,5 % à 21,2 % avec Kiriku (facteur ≈ 3,1, 4 enregistrements), sur des enregistrements mixtes **artificiels**. Rien de ceci ne démontre un support du wolof spontané, bruité, ni du changement de langue au milieu d'une phrase.
+**À retenir.** Les modèles Whisper tiny, base et small, qui sont les seuls mesurés ici, donnent un WER de 99 % ou plus sur du wolof lu : leur texte est inutilisable. Les tailles plus grandes n'ont pas été mesurées et rien n'autorise à les croire meilleures ou pires. Des modèles ajustés au wolof existent et sont nettement meilleurs, surtout un modèle large, au prix d'une lenteur importante sur processeur. Un routage par langue qui envoie les passages wolof à un tel modèle fait passer le WER de 56,0 % à 23,6 % avec le petit modèle M9 (facteur ≈ 2,4, 10 enregistrements) et de 56,0 % à 18,0 % avec Kiriku (facteur ≈ 3,1), sur les mêmes 10 enregistrements mixtes **artificiels**. Rien de ceci ne démontre un support du wolof spontané, bruité, ni du changement de langue au milieu d'une phrase.
 
 ## Données
 
@@ -77,6 +77,7 @@ Pour chaque enregistrement, 4 à 6 clips de validation (wolof, français, anglai
 | 1. M9, avant correction du seuil de silence | 10 | 55,8 % | 89,7 % | 47,0 % | 19,2 % |
 | 2. M9, après correction | 10 | 56,0 % | 89,7 % | **23,6 %** | 19,2 % |
 | 3. Kiriku-Wolof | 4 | 65,5 % | 59,4 % | **21,2 %** | 16,8 % |
+| 4. Kiriku-Wolof, système routé seul (classifieur) | 10 | 56,0 % (exécution 2, mêmes enregistrements) | non mesuré | **18,0 %** | non mesuré |
 
 (WER ; les exécutions 2 et 3 n'ont pas le même nombre d'enregistrements : ne pas les comparer entre elles.)
 
@@ -91,7 +92,7 @@ Détection, exécutions 2 et 3 :
 | Erreur de frontière, maximum | 4,2 s | 4,2 s |
 | Frontières en trop | 10 | 4 |
 
-Temps de traitement, exécution 3 (≈215 s d'audio) : multilingue 111 s, routé 443 s, oracle 409 s. Le routage coûte environ deux fois le temps réel avec Kiriku sur ce processeur.
+Temps de traitement, exécution 3 (≈215 s d'audio) : multilingue 111 s, routé 443 s, oracle 409 s. Le routage coûte environ deux fois le temps réel avec Kiriku sur ce processeur dans cette exécution ; sur les 10 enregistrements (≈ 545 s d'audio) du système routé seul, 723 à 819 s, soit 1,3 à 1,5 fois le temps réel. Ces durées varient avec la charge de la machine.
 
 ### Un défaut trouvé et corrigé pendant ces mesures
 
@@ -100,6 +101,39 @@ La première exécution donnait 47 % : le détecteur était bon fenêtre par fen
 ### Vérification avec les vrais modèles via l'API
 
 Un fichier mixte de 30 s (anglais, trois passages wolof, français) envoyé à l'API avec le moteur `language-routing` a donné un statut 200, aucun avertissement, 83 s de traitement, et un texte correctement ordonné et étiqueté sauf un cas : un passage wolof d'environ 2 s a été étiqueté « anglais », et le modèle multilingue a produit du texte en écriture devanagari (hallucination) au lieu de wolof. **Les passages très courts sont le point faible du routage** : la durée minimale d'un passage est de 2 s et la fenêtre de détection de 3 s.
+
+### Variante : détecteur « français ou anglais, sinon wolof »
+
+Au lieu du classifieur entraîné, une règle : une fenêtre est française ou anglaise si Whisper est assez confiant (probabilité du meilleur des deux ≥ seuil), sinon elle est wolof. Aucun entraînement, aucun fichier de détecteur (`LINGUANOTE_ROUTING_DETECTOR=fr-en-else-wolof`). Elle repose sur le fait mesuré que Whisper n'est jamais confiant en français ou en anglais devant du wolof. Mesurée par `scripts/eval_rule_detector.py` sur les 472 fenêtres de validation (seuil 0,77 choisi sur `dev`) :
+
+| Détecteur | Total | Français | Anglais | Wolof |
+| --- | --- | --- | --- | --- |
+| Règle, probabilité brute de fr / en | 97,9 % | 92,2 % | 97,4 % | 100 % |
+| Classifieur entraîné | 96,8 % | 98,3 % | 97,4 % | 96,2 % |
+| Règle « stricte » (Whisper limité à fr+en, renormalisé) | 89,0 % | 78,3 % | 100 % | 91,5 % |
+
+- Le total de la règle est favorisé : le wolof domine ces fenêtres (318 sur 472). Elle envoie 8 % du français vers le modèle wolof, ce que le classifieur fait beaucoup moins.
+- La version stricte, qui limite réellement Whisper à deux langues, est nettement moins bonne : il faut garder les probabilités brutes.
+- **Le seuil est instable** : 0,77 réglé sur tout `dev`, mais 0,54 à 0,56 quand il est réglé sur un seul corpus. Avec cette dernière valeur, le wolof de l'autre corpus est retrouvé à 97,1 % (ALFFA) et 89,5 % (FLEURS). Du français ou de l'anglais bruité, donc peu confiant, sera envoyé au modèle wolof : **non mesuré**.
+
+De bout en bout sur les mêmes 10 enregistrements mixtes (Kiriku, système routé seul ; 33 changements de langue) :
+
+| | Règle (0,77) | Règle + langue imposée | Classifieur |
+| --- | --- | --- | --- |
+| WER | 16,6 % | 16,6 % | 18,0 % |
+| Parole dans la bonne langue | 93,3 % | 93,3 % | **95,9 %** |
+| Changements manqués ou à plus de 1,5 s | **3** | **3** | 6 |
+| Frontières en trop | 15 | 15 | **10** |
+| Erreur de frontière médiane / maximale | 0,51 s / 2,0 s | 0,51 s / 2,0 s | 0,43 s / 4,2 s |
+| Temps de traitement (≈ 545 s d'audio) | 819 s | 748 s | 723 s |
+
+**Lecture honnête : pas de gagnant net.** La règle a un WER un peu plus bas (16,6 % contre 18,0 %) et manque moins de changements ; le classifieur étiquette mieux la parole et crée moins de frontières en trop. La différence de WER représente quelques mots sur ce petit échantillon. Sur les 4 premiers enregistrements seuls (exécution précédente), la règle paraissait nettement meilleure (WER 18,1 % contre 21,2 %, parole bien étiquetée 98,8 % contre 95,8 %) : cet avantage ne s'est **pas** confirmé à 10 enregistrements, ce qui montre à quel point ces écarts sont fragiles. Le classifieur reste le détecteur par défaut ; la règle est une alternative qui n'exige aucun fichier de détecteur.
+
+**La langue imposée n'a eu aucun effet mesurable ici** : mêmes résultats à la décimale que sans elle. Sur ces enregistrements, Whisper retrouvait seul la bonne langue des passages que le détecteur avait bien étiquetés. La protection ne joue que lorsque le modèle se tromperait de langue seul, ce que ces données n'ont pas montré (les différences de temps de traitement sont du bruit de mesure).
+
+### Langue imposée à chaque passage, modèles par langue
+
+Le moteur peut dire au modèle multilingue la langue détectée pour un passage français ou anglais (au lieu de le laisser la redeviner), jamais pour le wolof (Whisper n'a pas de code wolof) ni pour un passage de repli. Il peut aussi utiliser un modèle distinct pour le français et pour l'anglais (`LINGUANOTE_ROUTING_FRENCH_MODEL`, `LINGUANOTE_ROUTING_ENGLISH_MODEL`). Si le détecteur se trompe sur un passage, le modèle écrira dans la mauvaise langue au lieu de n'importe quel alphabet : le texte est faux, mais plus lisible. L'effet de la langue imposée sur le WER est donné ci-dessus (aucun effet mesurable sur ces enregistrements) ; l'effet de modèles distincts par langue n'est pas mesuré.
 
 ## Ce qui n'est pas démontré
 

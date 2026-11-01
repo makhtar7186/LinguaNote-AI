@@ -49,9 +49,9 @@ Comparer deux pistes sans présumer du résultat : un moteur multilingue génér
 Implémenté dans `services/transcription/app/language/` ; mesures et limites dans [evaluation-wolof.md](evaluation-wolof.md). Chaîne de traitement, chaque étape étant un module séparé :
 
 1. `whisper_lid.py` : vecteur des probabilités de langue de Whisper `tiny` sur des fenêtres de 3 s (pas de 1,5 s).
-2. `classifier.py` : régression logistique (numpy seul) qui convertit ce vecteur en français / anglais / wolof ; poids dans un fichier JSON (`LINGUANOTE_ROUTING_CLASSIFIER`).
+2. `classifier.py` : régression logistique (numpy seul) qui convertit ce vecteur en français / anglais / wolof ; poids dans un fichier JSON (`LINGUANOTE_ROUTING_CLASSIFIER`). Alternative sans fichier, `rule.py` (`LINGUANOTE_ROUTING_DETECTOR=fr-en-else-wolof`) : français ou anglais si Whisper en est assez sûr, sinon wolof.
 3. `segmentation.py` : lissage de Viterbi avec pénalité de changement, fusion des passages de moins de 2 s, frontières ramenées à l'instant le plus silencieux voisin, passages numérotés qui couvrent tout l'audio. Les fenêtres quasi silencieuses (volume < 0,0005) ne sont pas envoyées au détecteur.
-4. `routing.py` : un moteur par passage (modèle multilingue pour français, anglais et langues inconnues ; modèle wolof pour le wolof), isolation des échecs, réassemblage **par numéro de passage**, décalage des temps vers l'enregistrement entier, `warnings` si un passage est perdu.
+4. `routing.py` : un moteur par passage (modèle multilingue par défaut pour les langues inconnues, modèles éventuellement distincts pour le français et l'anglais, modèle wolof pour le wolof ; la langue détectée est imposée aux passages français et anglais, jamais au wolof), isolation des échecs, réassemblage **par numéro de passage**, décalage des temps vers l'enregistrement entier, `warnings` si un passage est perdu.
 5. `engines/language_routing.py` : assemble le tout depuis la configuration et le publie dans le registre. Refusé par le direct (WebSocket) : le routage a besoin de passages entiers.
 
 Le texte reconnu n'est jamais traduit ni corrigé, et la langue de chaque passage est une estimation qui indique le modèle choisi, pas une garantie.
