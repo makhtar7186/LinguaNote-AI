@@ -5,7 +5,7 @@ Ce document décrit ce qui est réellement en place et ce qui reste à faire (é
 ## Données et traitement
 
 - Audio et texte sont traités localement. Aucune API cloud n'est utilisée, aucune télémétrie n'existe.
-- Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première utilisation (avec le moteur optionnel `language-routing`, deux modèles : le modèle choisi et le petit modèle `tiny` qui lit la langue ; les modèles wolof ne sont jamais téléchargés par l'application). Hors-ligne, la transcription échoue avec `model_unavailable`. Il n'y a pas encore de confirmation explicite avant ce téléchargement (limite connue).
+- Seul accès réseau : téléchargement des poids Whisper depuis Hugging Face à la première utilisation (avec le moteur optionnel `language-routing`, deux modèles : le modèle choisi et le petit modèle `tiny` qui lit la langue ; les modèles wolof ne sont jamais téléchargés par l'application). Hors-ligne, la transcription échoue avec `model_unavailable`. L'application **installée** demande l'accord de l'utilisateur au premier lancement : accepté, le choix est retenu (`model-download-consent.json` dans le profil) ; refusé, le service reçoit `HF_HUB_OFFLINE=1`, n'utilise que les modèles déjà présents, et la question revient au lancement suivant. En mode développement, il n'y a pas de question (limite connue). Le service seul et le serveur MCP restent pilotés par leurs variables d'environnement.
 - Les fichiers envoyés sont écrits dans un dossier temporaire (`tempfile.mkdtemp`) supprimé à la fin de la requête, succès ou erreur. Si une inférence dépasse son délai et continue de lire le fichier, la suppression est différée jusqu'à la fin de cette inférence. Une fermeture forcée du processus peut laisser un dossier `linguanote-*` dans le répertoire temporaire de l'utilisateur. Le nom du client n'est jamais utilisé comme chemin.
 - Par défaut rien n'est conservé. Un historique local existe, mais seulement si l'utilisateur l'active (voir « Historique des transcriptions » plus bas).
 - L'interface n'émet plus de requête vers Google Fonts : l'import de polices distantes a été supprimé (polices système de repli), pour tenir la promesse « aucun accès réseau » hors téléchargement du modèle.
@@ -62,6 +62,15 @@ L'insertion écrit dans l'application d'un tiers : elle est donc strictement enc
 ## Environnement d'exécution d'Electron
 
 Les éditeurs construits sur Electron définissent `ELECTRON_RUN_AS_NODE=1` ; hérité, il fait démarrer l'application comme un simple Node et la fait planter. `scripts/start-electron.cjs` retire cette variable de l'environnement de l'application (utilisé par `npm run dev` et `npm run smoke`).
+
+## Application installée
+
+- Service et FFmpeg sont livrés à côté de l'application : l'installée ignore `LINGUANOTE_PYTHON` et ne lance jamais un interpréteur désigné par l'environnement.
+- Verrous Electron (fuses) : pas de mode Node par `ELECTRON_RUN_AS_NODE`, ni `NODE_OPTIONS`, ni arguments d'inspection, et chargement du code seulement depuis l'archive. Le menu par défaut (rechargement, outils de développement) est retiré.
+- `LINGUANOTE_SMOKE_TEST=1` reste actif dans l'application installée, pour pouvoir vérifier cette version-là : il saute la confirmation d'insertion et exécute les contrôles, et libère aussitôt les raccourcis qu'il enregistre. Il exige de pouvoir définir l'environnement du processus, donc d'avoir déjà la main sur le compte Windows.
+- Une seule instance : un second lancement ramène la fenêtre existante au premier plan, pour éviter deux indicateurs d'enregistrement et des raccourcis en conflit. Le dossier de profil (`%APPDATA%\@linguanote\desktop`) est partagé avec le mode développement ; les deux ne peuvent donc pas tourner en même temps.
+- Installateur **non signé** : son authenticité n'est pas vérifiable par Windows. Ne le diffusez pas au-delà de personnes qui vous font confiance tant qu'il n'est pas signé.
+- **La désinstallation ne supprime pas l'historique** : `%APPDATA%\@linguanote\desktop` reste en place, pour ne pas détruire des transcriptions sans le demander. Pour tout effacer : « Tout supprimer » dans l'historique avant de désinstaller, ou supprimer ce dossier. Le cache des modèles (`%USERPROFILE%\.cache\huggingface`) reste aussi, car d'autres logiciels peuvent s'en servir.
 
 ## Secrets
 

@@ -41,7 +41,7 @@ Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé cou
 | Indicateur d'enregistrement clair, jamais caché | fait : anneau rouge pulsant + point REC ; démarrer ouvre toujours la bulle ; elle ne peut pas être masquée pendant l'enregistrement |
 | Bulle réactive, indépendante des traitements longs | fait par construction (la session et les événements sont dans le processus principal, diffusés à toutes les fenêtres) |
 | Micro : pas de fuite à l'arrêt, à la pause, à la fermeture ni quand ces actions croisent l'ouverture du micro | fait : jeton d'époque + verrou de démarrage ; 5 tests de course dont la suppression des gardes fait échouer |
-| **Non vérifié** | l'apparence réelle (transparence, ombres, animations) ; le glisser-déposer de la bulle à la souris ; plusieurs écrans ; un vrai microphone ; l'application packagée ; Windows seulement |
+| **Non vérifié** | la transparence et les animations (seul l'état inactif a été regardé, le 2026-11-06, sur l'application installée) ; le glisser-déposer de la bulle à la souris ; plusieurs écrans ; un vrai microphone ; Windows seulement |
 
 Limites connues : la bulle n'insère pas encore le texte dans l'application active (phase 5) ; la capture micro reste dans une fenêtre (la bulle, ou la fenêtre principale qui a démarré la session) ; fermer la fenêtre principale ferme l'application.
 
@@ -79,17 +79,23 @@ Limites connues : historique **non chiffré** par l'application (protégé seule
 
 Diarisation, résumés, adaptation du wolof si l'évaluation le justifie, fournisseurs cloud optionnels.
 
-## Packaging et distribution (à faire)
+## Packaging et distribution (installateur Windows produit et éprouvé sur la machine de développement)
 
-Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un backend lançable par Electron.
+Détails et commandes : [packaging.md](packaging.md).
 
-- [x] Lancer et arrêter le service Python depuis le processus principal Electron (port libre, jeton généré, arrêt de l'arbre de processus). Vérifié contre le vrai service ; la fenêtre Electron complète n'a pas encore été exercée de bout en bout.
-- [ ] Embarquer le service (PyInstaller ou Python embarqué) ; décider de la livraison de FFmpeg (licence) et des modèles (cache dans `%LOCALAPPDATA%`, téléchargement avec consentement, mode hors-ligne).
-- [ ] `electron-builder` (installateur NSIS), icône, signature de code, mises à jour.
-- [ ] Déplacer le dossier de journaux hors de l'arborescence des sources pour la version installée.
-- [ ] Vérifier l'application packagée (chemin `dist/index.html`, CSP, permissions).
-- [ ] Verrouiller les dépendances Python (un seul outil) et fournir des scripts reproductibles dans `scripts/`.
-- [x] Intégration continue : `.github/workflows/ci.yml` (Ruff + Pytest, ESLint + typecheck + Vitest + build). Écrit mais **jamais exécuté** : il faut un dépôt GitHub pour le valider.
+- [x] Lancer et arrêter le service depuis le processus principal Electron (port libre, jeton généré, arrêt de l'arbre de processus).
+- [x] Embarquer le service (PyInstaller, dossier) et FFmpeg ; `scripts/verify_frozen_service.py` le lance sans Python ni FFmpeg dans le `PATH` et lui fait transcrire une phrase synthétique, par fichier et en direct, y compris avec le moteur `language-routing` (2026-11-06).
+- [x] Modèles hors de l'installateur : cache Hugging Face habituel, téléchargement seulement après accord (boîte de dialogue à l'application installée), refus géré (`HF_HUB_OFFLINE`, message explicite).
+- [x] `electron-builder` : installateur NSIS par utilisateur, icône, verrous de sécurité Electron (fuses).
+- [x] Journaux et données dans le profil de l'utilisateur, plus dans le dossier d'installation.
+- [x] Application réellement installée (silencieusement, puis mise à niveau par-dessus) : test de fumée complet passé, y compris CSP et permissions. Lancement réel : boîte de consentement, refus, double lancement sans seconde instance, fermeture sans processus orphelin, fenêtres regardées.
+- [x] Dépendances Python verrouillées (`requirements-lock.txt`), installation vérifiée dans un environnement neuf.
+- [x] CI corrigée : le YAML était invalide depuis sa création, donc **aucun job n'avait jamais tourné** (une seule exécution GitHub, en échec, sans job). La correction n'est vérifiée que localement (fichier relu par un analyseur YAML) tant qu'elle n'est pas poussée.
+- [ ] Windows neuf (sans Python, FFmpeg ni modèles en cache) : téléchargement réel du modèle après accord ; l'absence de VC++ Redistributable.
+- [ ] Signature de code (certificat payant) : sans elle, SmartScreen avertit à l'installation.
+- [ ] Mises à jour automatiques : non prévues pour l'instant (il faudrait un hébergement et une signature).
+- [ ] Choix du wolof dans l'interface et livraison d'un modèle wolof (licences et accès à vérifier, voir [model-selection.md](model-selection.md)).
+- [ ] Licence du projet et avis de tiers avant toute diffusion publique ; FFmpeg GPLv3, voir [packaging.md](packaging.md).
 
 ## Dette connue
 
@@ -97,7 +103,7 @@ Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un 
 - Une inférence déjà démarrée ne peut pas être annulée.
 - Capture micro du direct via `ScriptProcessorNode` (déprécié mais fonctionnel) ; migration vers un `AudioWorklet` à faire quand l'application packagée pourra être exercée (chargement du module sous `file://` et CSP).
 - Découpage des énoncés par seuil d'énergie fixe ; le VAD Silero (déjà utilisé par Whisper pour filtrer) pourrait servir au découpage.
-- Pas de test Playwright / Electron de bout en bout.
+- Pas de test Playwright / Electron de bout en bout sur l'interface (le test de fumée pilote les fenêtres par l'API du preload, avec les vrais processus).
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
-- Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.
+- Pas de confirmation avant le téléchargement du modèle en mode développement (l'application installée la demande) ; pas d'annulation d'une transcription en cours.
 - Aucune mesure sur de la **parole spontanée ou bruitée** : seules de la parole lue (ALFFA, FLEURS) et un corpus synthétique FR/EN ont été mesurés. Le wolof est reconnu par des modèles dédiés avec des erreurs importantes hors de leur domaine, et le changement de langue **dans une phrase** reste non démontré.

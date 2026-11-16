@@ -4,7 +4,8 @@ const net = require("node:net");
 const path = require("node:path");
 const childProcess = require("node:child_process");
 
-const READY_TIMEOUT_MS = 60_000;
+// Generous: at the first launch of an installed application, antivirus software scans every file of the frozen service.
+const READY_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 400;
 const STDERR_TAIL_LINES = 20;
 const MAX_DETAIL_CHARS = 300;
@@ -50,6 +51,31 @@ function resolvePython(env) {
   return path.join(SERVICE_DIR, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 }
 
+/**
+ * What to run. An installed application runs the service it ships (`packagedService`: { executable, ffmpeg }) and
+ * ignores LINGUANOTE_PYTHON: it must not start an interpreter named by the environment. From the sources, it is Python.
+ */
+function planServiceProcess(env, port, packagedService) {
+  if (packagedService) {
+    return {
+      command: packagedService.executable,
+      label: "le service local",
+      args: ["--port", String(port), "--ws-max-size", String(WS_MAX_MESSAGE_BYTES)],
+      cwd: path.dirname(packagedService.executable),
+      // An explicit choice of FFmpeg wins over the copy shipped with the application.
+      env: { LINGUANOTE_FFMPEG: env.LINGUANOTE_FFMPEG || packagedService.ffmpeg },
+    };
+  }
+  const python = resolvePython(env);
+  return {
+    command: python,
+    label: `Python (${python})`,
+    args: ["-m", "uvicorn", "--factory", "app.main:create_app", "--host", "127.0.0.1", "--port", String(port), "--ws-max-size", String(WS_MAX_MESSAGE_BYTES)],
+    cwd: SERVICE_DIR,
+    env: {},
+  };
+}
+
 /** `external` when the user points at a backend they run themselves; otherwise Electron owns the process. */
 function planBackend(env = process.env) {
   if (env.LINGUANOTE_API_URL) return { mode: "external" };
@@ -88,18 +114,14 @@ async function startOnce(env, deps) {
   const token = newToken();
   const port = await portFinder();
   const base = `http://127.0.0.1:${port}`;
-  const python = resolvePython(env);
+  const service = planServiceProcess(env, port, deps.packagedService);
 
-  const child = spawn(
-    python,
-    ["-m", "uvicorn", "--factory", "app.main:create_app", "--host", "127.0.0.1", "--port", String(port), "--ws-max-size", String(WS_MAX_MESSAGE_BYTES)],
-    {
-      cwd: SERVICE_DIR,
-      windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
-      env: { ...env, LINGUANOTE_API_TOKEN: token },
-    },
-  );
+  const child = spawn(service.command, service.args, {
+    cwd: service.cwd,
+    windowsHide: true,
+    stdio: ["ignore", "ignore", "pipe"],
+    env: { ...env, ...service.env, LINGUANOTE_API_TOKEN: token },
+  });
 
   let alive = true;
   let stopping = false;
@@ -113,7 +135,7 @@ async function startOnce(env, deps) {
   const spawnFailure = new Promise((_, reject) => {
     child.once("error", (error) => {
       alive = false;
-      reject(new BackendStartError(`Impossible de lancer Python (${python}) : ${error.message}`));
+      reject(new BackendStartError(`Impossible de lancer ${service.label} : ${error.message}`));
     });
   });
   child.once("exit", () => {
@@ -162,5 +184,5 @@ async function startManagedBackend(env = process.env, deps = {}) {
 }
 
 module.exports = {
-  BackendStartError, newToken, findFreePort, resolvePython, planBackend, waitUntilReady, startManagedBackend, redact,
+  BackendStartError, newToken, findFreePort, resolvePython, planBackend, planServiceProcess, waitUntilReady, startManagedBackend, redact,
 };

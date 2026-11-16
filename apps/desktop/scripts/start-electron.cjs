@@ -13,9 +13,12 @@ function cleanEnvironment(extra = {}) {
   return env;
 }
 
-function startElectron({ extraEnv, stdio = "inherit" } = {}) {
+/** `executable`: an installed application, which needs no path to the application folder. */
+function startElectron({ extraEnv, stdio = "inherit", executable } = {}) {
+  const env = cleanEnvironment(extraEnv);
+  if (executable) return spawn(executable, [], { stdio, env });
   const electronBinary = require("electron"); // the package exports the path of the binary
-  return spawn(electronBinary, [path.join(__dirname, "..")], { stdio, env: cleanEnvironment(extraEnv) });
+  return spawn(electronBinary, [path.join(__dirname, "..")], { stdio, env });
 }
 
 module.exports = { cleanEnvironment, startElectron };

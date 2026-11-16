@@ -55,3 +55,13 @@ class FasterWhisperEngineTests(unittest.TestCase):
         with patch.dict(sys.modules, {"faster_whisper": SimpleNamespace(WhisperModel=BrokenModel)}):
             with self.assertRaises(ModelUnavailableError):
                 FasterWhisperEngine()
+
+    def test_a_refused_download_says_what_to_do_instead_of_blaming_the_network(self):
+        class BrokenModel:
+            def __init__(self, *args, **kwargs):
+                raise OSError("not in the cache")
+
+        with patch.dict(sys.modules, {"faster_whisper": SimpleNamespace(WhisperModel=BrokenModel)}):
+            with patch.dict(os.environ, {"HF_HUB_OFFLINE": "1"}):
+                with self.assertRaisesRegex(ModelUnavailableError, "acceptez le téléchargement"):
+                    FasterWhisperEngine()
