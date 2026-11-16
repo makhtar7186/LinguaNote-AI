@@ -48,6 +48,10 @@ Ces vérifications utilisent des modèles déjà en cache : aucune ne téléchar
 
 - Service gelé : démarre sans environnement de développement ; une phrase synthétique en français revient en texte (85 % des mots) par fichier et en direct, avec `faster-whisper base` et avec `language-routing` configuré sur cette machine. Ce n'est **pas** une mesure de qualité : voix de synthèse, français seulement.
 - Wolof dans le service gelé (contrôle ponctuel, pas une nouvelle mesure de qualité) : 12 clips ALFFA `dev`, 49 s de parole lue, moteur `language-routing`. Textes **identiques** entre le service gelé et les sources pour les 12 clips, par fichier (Kiriku) et en direct (M9). L'échantillon est trop petit pour remplacer les chiffres de [evaluation-wolof.md](evaluation-wolof.md). Temps total, chargement des modèles compris, sur un Core i5-1135G7 : environ 10 fois la durée de l'audio par fichier et 3,5 fois en direct.
+- **Direct en wolof continu** (2026-11-16, service gelé, `language-routing` avec M9 pour le direct, `LINGUANOTE_LIVE_JOB_TIMEOUT_SECONDS=120`). Les clips ALFFA `dev` sont collés bout à bout, sans pause, et envoyés au rythme réel :
+  - 5 min (301 s) : 24 passages finalisés, aucune erreur, arrêt propre. Le retard du texte passe de 12 s à 72 s, soit environ 0,2 s de plus par seconde de parole : le modèle est environ 1,25 fois plus lent que l'audio sur ce Core i5-1135G7.
+  - 10 min (642 s) : texte reçu jusqu'à la 502ᵉ seconde (40 passages, retard d'environ 112 s). Puis, à 627 s, erreur explicite `overloaded` et fin de session. Les passages encore en file sont abandonnés : à peu près les deux dernières minutes de parole n'ont jamais donné de texte.
+  - Conséquence : sur cette machine, le direct en wolof convient à quelques minutes de parole continue, pas à une réunion entière. Une vraie conversation contient des pauses, ce qui retarde ce seuil sans le supprimer (non mesuré). Pour une réunion longue, mieux vaut enregistrer puis transcrire le fichier.
 - Installateur : installation silencieuse, mise à niveau par-dessus, désinstallation.
 - Application installée : test de fumée complet, y compris le service, la CSP, les permissions, une session en direct par IPC et l'historique.
 - Lancement réel : boîte de consentement affichée et refus respecté, second lancement sans seconde instance, fermeture sans processus orphelin, fenêtre principale et bulle regardées à l'écran (état de repos).
@@ -57,7 +61,6 @@ Ces vérifications utilisent des modèles déjà en cache : aucune ne téléchar
 - **Un Windows neuf**, sans Python, sans FFmpeg, sans modèles en cache et sans les bibliothèques déjà présentes ici. C'est le prochain test à faire, par exemple dans le Bac à sable Windows. Le service gelé embarque le runtime Visual C++ repéré par PyInstaller, mais rien n'a confirmé qu'il suffit.
 - **Le téléchargement réel du modèle après accord** : le modèle était déjà en cache sur cette machine.
 - Un vrai microphone dans l'application installée.
-- Un direct en wolof de plusieurs minutes. Sur ce processeur, le modèle M9 est plus lent que l'audio : d'après le code, une parole continue finirait par remplir la file (8 passages) et la session s'arrêterait avec l'erreur `overloaded`. Ce scénario n'a pas été exécuté.
 - La présence d'un antivirus tiers. Un exécutable non signé produit par PyInstaller peut être signalé à tort.
 
 ## Licences : à régler avant toute diffusion publique

@@ -28,7 +28,7 @@ Prochaine action côté données : réunir des extraits **spontanés et bruités
 | Interface : texte définitif et provisoire, état, notices d'erreur, micro libéré à l'arrêt, à l'erreur et à la fermeture | fait (tests de composants) |
 | **Non vérifié** | la fenêtre Electron avec un vrai microphone ; la capture micro (ScriptProcessor, voir dette) ; la qualité sur de la parole réelle, bruitée ou en wolof ; la latence en conditions réelles (inférence sérialisée sur CPU : un énoncé est finalisé après quelques secondes) |
 
-Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé coupé de force après 15 s au point le plus silencieux (un mot peut être divisé) ; un `partial` est abandonné si le worker est occupé ; une seule session à la fois ; langue estimée par énoncé uniquement, sans reconnaissance du code-switching.
+Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé coupé de force après 15 s au point le plus silencieux (un mot peut être divisé) ; un `partial` est abandonné si le worker est occupé ; une seule session à la fois ; en wolof (routage, modèle M9), le direct est environ 1,25 fois plus lent que l'audio sur le processeur de développement : 10 min de parole continue finissent en erreur `overloaded` et les derniers passages en file sont perdus (mesuré le 2026-11-16, voir [packaging.md](packaging.md)) ; langue estimée par énoncé uniquement, sans reconnaissance du code-switching.
 
 ## Phase 3 - Bulle flottante (implémentée, vérifiée sans affichage à l'écran)
 
