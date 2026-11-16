@@ -33,6 +33,30 @@ describe("App", () => {
     expect(screen.getByText(/audio < 10 min/)).toBeTruthy();
   });
 
+  it("does not present a service that is still starting as a failure, and notices when it is ready", async () => {
+    const starting = { ok: false, code: "starting", message: "Démarrage du service local…" };
+    const healthCheck = vi.fn().mockResolvedValueOnce(starting).mockResolvedValue(health);
+    window.linguaNote = { health: healthCheck, transcribe: vi.fn() } as unknown as Window["linguaNote"];
+    render(<App />);
+
+    const notice = await screen.findByText("Démarrage du service local…");
+    expect(notice.className).not.toContain("error-notice");
+    expect(screen.getByText("Démarrage du service…")).toBeTruthy();
+    expect(screen.queryByText("Service local indisponible")).toBeNull();
+
+    // Well before the 10 s of the regular check.
+    expect(await screen.findByText(/Moteur configuré · faster-whisper/, undefined, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText("Démarrage du service local…")).toBeNull();
+  });
+
+  it("shows a start that failed as an error", async () => {
+    installBridge(vi.fn(), { ok: false, code: "backend_start_failed", message: "Le service local n'a pas démarré." });
+    render(<App />);
+    const notice = await screen.findByText("Le service local n'a pas démarré.");
+    expect(notice.className).toContain("error-notice");
+    expect(screen.getByText("Service local indisponible")).toBeTruthy();
+  });
+
   it("warns when the service is unreachable", async () => {
     installBridge(vi.fn(), { ok: false, code: "service_unavailable", message: "Service local indisponible. Démarrez le service Python." });
     render(<App />);
