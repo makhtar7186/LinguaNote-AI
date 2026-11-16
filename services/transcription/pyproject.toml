@@ -24,6 +24,9 @@ mcp-server = ["mcp>=1.28,<2"]
 # on the same machine; 1.20.1 is the verified version.
 windows-asr = ["faster-whisper>=1.1,<2", "av>=11,<18.1", "ctranslate2>=4.4,<4.7", "onnxruntime>=1.17,<1.21"]
 dev = ["pytest>=8", "httpx2>=2", "ruff>=0.6"]
+# Builds the frozen service shipped in the installer (scripts/build-installer.ps1). Pinned: a new PyInstaller can change
+# what ends up in the bundle, and that is only checked by the packaged smoke test.
+package = ["pyinstaller==6.22.3"]
 
 [tool.setuptools.packages.find]
 where = ["."]
