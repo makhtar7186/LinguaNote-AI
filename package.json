@@ -12,6 +12,8 @@
     "test": "npm run test --workspace apps/desktop",
     "typecheck": "npm run typecheck --workspace apps/desktop",
     "lint": "npm run lint --workspace apps/desktop",
-    "smoke": "npm run smoke --workspace apps/desktop"
+    "smoke": "npm run smoke --workspace apps/desktop",
+    "smoke:packaged": "npm run smoke:packaged --workspace apps/desktop",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1"
   }
 }

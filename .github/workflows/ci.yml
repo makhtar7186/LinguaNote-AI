@@ -17,11 +17,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: services/transcription/pyproject.toml
+          cache-dependency-path: services/transcription/requirements-lock.txt
       - name: Install FFmpeg (needed by the audio conversion tests)
         run: choco install ffmpeg -y --no-progress
-      - name: Install backend (no ASR extra: tests never download models)
-        run: python -m pip install -e ".[api,mcp-server,dev]"
+      # The verified versions. The tests never download a model.
+      - name: Install backend from the lock file
+        run: |
+          python -m pip install -r requirements-lock.txt
+          python -m pip install --no-deps -e .
       - run: python -m ruff check app tests
       - run: python -m pytest -q
 

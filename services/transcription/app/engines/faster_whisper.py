@@ -29,6 +29,12 @@ class FasterWhisperEngine:
                 cpu_threads=int(os.getenv("LINGUANOTE_CPU_THREADS", "4")),
             )
         except Exception as exc:
+            if os.getenv("HF_HUB_OFFLINE") == "1":
+                # The user declined the download (or the machine is offline by choice): retrying will not help.
+                raise ModelUnavailableError(
+                    f"Le modèle de reconnaissance « {self.model} » n'est pas présent sur cet ordinateur et son "
+                    "téléchargement n'est pas autorisé. Relancez l'application et acceptez le téléchargement."
+                ) from exc
             raise ModelUnavailableError(
                 f"The Whisper model '{self.model}' could not be loaded. "
                 "Check network access on first use and available disk space."

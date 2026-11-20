@@ -4,6 +4,9 @@
 //
 // The speech model must already be in the local cache (no download happens). A microphone is not needed:
 // the live session is opened and closed through IPC without audio.
+//
+// `--packaged` runs the same checks on the installed files instead of the sources: release/win-unpacked by default, or
+// the application named by LINGUANOTE_SMOKE_EXE (for example after a real install).
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -12,7 +15,16 @@ const { startElectron } = require("./start-electron.cjs");
 const appDir = path.join(__dirname, "..");
 const timeoutMs = Number(process.env.LINGUANOTE_SMOKE_TIMEOUT_MS ?? 240_000);
 
-if (!fs.existsSync(path.join(appDir, "dist", "index.html")) || !fs.existsSync(path.join(appDir, "dist", "bubble.html"))) {
+const packaged = process.argv.includes("--packaged");
+const executable = packaged
+  ? process.env.LINGUANOTE_SMOKE_EXE || path.join(appDir, "..", "..", "release", "win-unpacked", "LinguaNote AI.exe")
+  : undefined;
+
+if (packaged && !fs.existsSync(executable)) {
+  console.error(`${executable} is missing: run \`npm run package\` first.`);
+  process.exit(2);
+}
+if (!packaged && (!fs.existsSync(path.join(appDir, "dist", "index.html")) || !fs.existsSync(path.join(appDir, "dist", "bubble.html")))) {
   console.error("dist/ is missing: run `npm run build` first.");
   process.exit(2);
 }
@@ -22,6 +34,7 @@ const outputFile = path.join(os.tmpdir(), `linguanote-smoke-${process.pid}.json`
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "linguanote-smoke-data-"));
 
 const child = startElectron({
+  executable,
   stdio: ["ignore", "ignore", "pipe"],
   extraEnv: {
     LINGUANOTE_SMOKE_TEST: "1",

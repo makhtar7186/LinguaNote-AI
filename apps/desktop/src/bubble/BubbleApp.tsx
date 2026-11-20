@@ -64,7 +64,10 @@ export default function BubbleApp() {
     return (
       <div className="bubble bubble-collapsed" data-testid="bubble" data-mode={mode} role="status" aria-label={statusLabel(live.state)}>
         <button className="bubble-core" onClick={() => setOpenedByUser(true)} aria-label={`LinguaNote — ${statusLabel(live.state)}. Ouvrir`}>
-          <span className="bubble-glyph" aria-hidden="true" />
+          <svg className="bubble-glyph" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3" />
+            <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+          </svg>
         </button>
         {mode === "recording" && <span className="rec-dot" aria-hidden="true" />}
       </div>

@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
+import nodePath from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 const launcher = createRequire(import.meta.url)("../electron/backend-launcher.cjs");
@@ -15,6 +16,34 @@ describe("planBackend", () => {
   it("manages the backend by default and honours an explicit external URL", () => {
     expect(launcher.planBackend({})).toEqual({ mode: "managed" });
     expect(launcher.planBackend({ LINGUANOTE_API_URL: "http://127.0.0.1:9000" })).toEqual({ mode: "external" });
+  });
+});
+
+describe("planServiceProcess", () => {
+  const shipped = { executable: nodePath.join("app", "service", "linguanote-service.exe"), ffmpeg: nodePath.join("app", "ffmpeg", "ffmpeg.exe") };
+
+  it("runs Python from the sources when no service is shipped", () => {
+    const plan = launcher.planServiceProcess({ LINGUANOTE_PYTHON: "py.exe" }, 5555, undefined);
+    expect(plan.command).toBe("py.exe");
+    expect(plan.args).toEqual(expect.arrayContaining(["-m", "uvicorn", "--host", "127.0.0.1", "--port", "5555"]));
+    expect(plan.env).toEqual({});
+  });
+
+  it("runs the shipped service from its own folder, with the shipped FFmpeg", () => {
+    const plan = launcher.planServiceProcess({}, 5555, shipped);
+    expect(plan.command).toBe(shipped.executable);
+    expect(plan.args.slice(0, 2)).toEqual(["--port", "5555"]);
+    expect(plan.args).toContain("--ws-max-size");
+    expect(plan.cwd).toBe(nodePath.join("app", "service"));
+    expect(plan.env.LINGUANOTE_FFMPEG).toBe(shipped.ffmpeg);
+  });
+
+  it("does not let the environment replace the shipped service with another program", () => {
+    expect(launcher.planServiceProcess({ LINGUANOTE_PYTHON: "other.exe" }, 5555, shipped).command).toBe(shipped.executable);
+  });
+
+  it("keeps a FFmpeg the user chose explicitly", () => {
+    expect(launcher.planServiceProcess({ LINGUANOTE_FFMPEG: "chosen.exe" }, 5555, shipped).env.LINGUANOTE_FFMPEG).toBe("chosen.exe");
   });
 });
 
@@ -34,6 +63,29 @@ describe("findFreePort", () => {
 });
 
 describe("startManagedBackend", () => {
+  it("starts the shipped service with the secret and the shipped FFmpeg", async () => {
+    const spawn = vi.fn().mockReturnValue(fakeChild());
+    const backend = await launcher.startManagedBackend(
+      { PATH: "x" },
+      { spawn, portFinder: async () => 5555, ready: vi.fn().mockResolvedValue(undefined), packagedService: { executable: "svc.exe", ffmpeg: "ff.exe" } },
+    );
+    const [command, , options] = spawn.mock.calls[0];
+    expect(command).toBe("svc.exe");
+    expect(options.env).toMatchObject({ LINGUANOTE_API_TOKEN: backend.token, LINGUANOTE_FFMPEG: "ff.exe", PATH: "x" });
+  });
+
+  it("names the service, not Python, when the shipped service cannot be launched", async () => {
+    const child = fakeChild();
+    const spawn = vi.fn().mockImplementation(() => {
+      queueMicrotask(() => child.emit("error", new Error("ENOENT")));
+      return child;
+    });
+    await expect(launcher.startManagedBackend(
+      {},
+      { spawn, portFinder: async () => 5555, ready: () => new Promise(() => {}), packagedService: { executable: "svc.exe", ffmpeg: "ff.exe" } },
+    )).rejects.toThrow(/Impossible de lancer le service local : ENOENT/);
+  });
+
   it("starts on the chosen port with a secret only the child receives", async () => {
     const child = fakeChild();
     const spawn = vi.fn().mockReturnValue(child);

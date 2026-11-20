@@ -64,12 +64,13 @@ export default function App() {
     });
   }, []);
 
-  // Re-check periodically so the status recovers when the Python service starts after the UI.
+  // A service still starting is not a failure: it is watched closely, then checked now and then in case it goes away.
+  const serviceStarting = health === null || health.code === "starting";
   useEffect(() => {
     refreshHealth();
-    const timer = window.setInterval(refreshHealth, 10_000);
+    const timer = window.setInterval(refreshHealth, serviceStarting ? 1_000 : 10_000);
     return () => window.clearInterval(timer);
-  }, [refreshHealth]);
+  }, [refreshHealth, serviceStarting]);
 
   async function submitAudio(audioFile: File) {
     if (audioFile.size > maxBytes) {
@@ -125,7 +126,7 @@ export default function App() {
 
   const serviceLabel = health?.ok
     ? health.engine_selected ? `Moteur configuré · ${health.engine}` : "API prête · moteur absent"
-    : health ? "Service local indisponible" : "Vérification du service…";
+    : serviceStarting ? "Démarrage du service…" : "Service local indisponible";
 
   return (
     <main className="app-shell">
@@ -166,7 +167,7 @@ export default function App() {
         </div>
 
         {health && !health.ok && health.message && (
-          <div className="notice error-notice" role="status">{health.message}</div>
+          <div className={`notice ${serviceStarting ? "setup-notice" : "error-notice"}`} role="status">{health.message}</div>
         )}
         {health?.ok && health.ffmpeg_available === false && (
           <div className="notice error-notice" role="status">
@@ -177,7 +178,7 @@ export default function App() {
           <div className="notice setup-notice" role="status">
             {!health.engine_selected
               ? `${health.setup_message ?? "Aucun moteur ASR compatible n’est installé."} Le micro et l’import fonctionnent, mais la transcription reste indisponible.`
-              : `Le modèle ${health.model ?? "Whisper base"} sera téléchargé lors de la première transcription. Le français et l’anglais sont pris en charge ; le wolof et les phrases mixtes restent à évaluer.`}
+              : `Modèle : ${health.model ?? "Whisper base"} (récupéré à la première transcription s’il n’est pas encore présent et si vous l’avez autorisé). Le français et l’anglais sont pris en charge ; le wolof et les phrases mixtes restent à évaluer.`}
           </div>
         )}
 

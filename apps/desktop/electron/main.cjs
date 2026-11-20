@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ClipboardItem, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
+const { app, BrowserWindow, ClipboardItem, Menu, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, screen, session, webContents } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const api = require("./api-client.cjs");
@@ -13,6 +13,7 @@ const { LiveClient } = require("./live-client.cjs");
 const { createElectronClipboardPort } = require("./electron-clipboard.cjs");
 const { createTextInserter } = require("./text-inserter.cjs");
 const { createWindowsDesktop } = require("./windows-desktop.cjs");
+const { createModelConsent } = require("./model-consent.cjs");
 const { createPositionStore } = require("./position-store.cjs");
 const { registerShortcuts, resolveAccelerators, unregisterShortcuts } = require("./shortcuts.cjs");
 
@@ -20,6 +21,17 @@ const DEV_URL = "http://127.0.0.1:5173";
 // Smoke test (npm run smoke): loads the built pages like the packaged app, drives them, reports, and exits.
 // Windows stay hidden so the check never flashes anything on the user's screen.
 const SMOKE = process.env.LINGUANOTE_SMOKE_TEST === "1";
+
+// Two instances would mean two bubbles, two recording indicators and global shortcuts fighting each other. A second
+// launch brings the running one forward instead. The smoke test is exempt: it may run beside a real session.
+if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0);
+app.on("second-instance", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 const urls = createUrlPolicy({
   useDist: app.isPackaged || SMOKE, devUrl: DEV_URL, distDir: path.join(__dirname, "..", "dist"),
 });
@@ -88,14 +100,49 @@ function loadPage(window, name) {
 
 // -- backend ----------------------------------------------------------------------------------------------
 
+/** The service and FFmpeg shipped next to the application (electron-builder extraResources), never inside the asar. */
+function shippedService() {
+  return {
+    executable: path.join(process.resourcesPath, "service", "linguanote-service.exe"),
+    ffmpeg: path.join(process.resourcesPath, "ffmpeg", "ffmpeg.exe"),
+  };
+}
+
+/** An installed application asks before fetching model weights. The smoke test sets its own policy and never asks. */
+async function downloadPolicy() {
+  if (!app.isPackaged || SMOKE) return {};
+  const consent = createModelConsent({
+    fs,
+    file: path.join(app.getPath("userData"), "model-download-consent.json"),
+    ask: async () => {
+      const choice = await dialog.showMessageBox({
+        type: "question",
+        buttons: ["Autoriser le téléchargement", "Pas maintenant"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Modèle de reconnaissance vocale",
+        message: "Autoriser le téléchargement du modèle de reconnaissance vocale ?",
+        detail: "LinguaNote transcrit sur cet ordinateur, mais doit d'abord récupérer le modèle depuis Hugging Face, à la première transcription (environ 150 Mo pour le modèle par défaut). Aucun audio ni aucun texte n'est envoyé.\n\nSans ce modèle, la transcription reste indisponible. La question sera reposée au prochain lancement.",
+      });
+      return choice.response === 0;
+    },
+  });
+  return consent.environment(process.env);
+}
+
 async function startBackend() {
   try {
     if (launcher.planBackend().mode === "external") {
       config = api.getConfig();
     } else {
-      // History lives in the user's profile, not in the install folder; an explicit LINGUANOTE_DATA_DIR wins.
-      const env = { ...process.env, LINGUANOTE_DATA_DIR: process.env.LINGUANOTE_DATA_DIR || path.join(app.getPath("userData"), "data") };
+      // History and logs live in the user's profile, not in the install folder; an explicit LINGUANOTE_DATA_DIR wins.
+      const env = {
+        ...process.env,
+        LINGUANOTE_DATA_DIR: process.env.LINGUANOTE_DATA_DIR || path.join(app.getPath("userData"), "data"),
+        ...(await downloadPolicy()),
+      };
       const backend = await launcher.startManagedBackend(env, {
+        packagedService: app.isPackaged ? shippedService() : undefined,
         // Registered as soon as the process exists, so quitting during startup still stops it.
         onSpawn: (stop) => { stopBackend = stop; },
         isCancelled: () => quitting,
@@ -456,6 +503,11 @@ async function runSmokeTest() {
   const pending = Promise.all([once(mainWindow.webContents, "did-finish-load"), once(bubble.webContents, "did-finish-load")]);
   const loaded = await Promise.race([pending.then(() => true), new Promise((resolve) => setTimeout(() => resolve(false), 30_000))]);
   check("both pages finished loading from the built files", loaded);
+  check("no developer menu (reload, developer tools) in the built application", Menu.getApplicationMenu() === null);
+  if (app.isPackaged) {
+    const shipped = shippedService();
+    check("installed application: the service and FFmpeg are shipped outside the archive", fs.existsSync(shipped.executable) && fs.existsSync(shipped.ffmpeg), JSON.stringify(shipped));
+  }
 
   if (loaded) {
     const probe = `(() => ({
@@ -488,6 +540,9 @@ async function runSmokeTest() {
       const frames = await run(contents, frameProbe);
       check(`${label} page: a frame is blocked by the CSP and gets no bridge`, frames.violations.some((d) => d.startsWith("frame-src") || d.startsWith("child-src")) && !frames.sawLinguaNote, JSON.stringify(frames));
     }
+
+    // A declaration is refused while the service starts: without this wait, the checks below could pass for that reason.
+    for (let i = 0; i < 1200 && backendState.status === "starting"; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
 
     // System audio capture is denied unless the window armed it first, once, and only for itself.
     const askForSystemAudio = `(async () => {
@@ -545,10 +600,6 @@ async function runSmokeTest() {
     check("bubble is always on top, never focusable, frameless, small", win.isAlwaysOnTop() && !win.isFocusable() && bounds.width === 72 && bounds.height === 72, JSON.stringify(bounds));
     check("bubble is inside a display work area", bounds.x >= area.x && bounds.y >= area.y && bounds.x + bounds.width <= area.x + area.width && bounds.y + bounds.height <= area.y + area.height);
 
-    const waitReady = async () => {
-      for (let i = 0; i < 900 && backendState.status === "starting"; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
-    };
-    await waitReady();
     check("local service started by Electron", backendState.status === "ready", backendState.message ?? "");
     if (backendState.status === "ready") {
       const health = await run(mainWindow.webContents, "window.linguaNote.health()");
@@ -740,7 +791,7 @@ async function runSmokeTest() {
     JSON.stringify({ registered: shortcutReport.registered.map((item) => item.name), taken: shortcutReport.failed.map((item) => item.name), malformed, wrongBinding }),
   );
   const ok = checks.every((item) => item.ok);
-  const report = JSON.stringify({ ok, checks, shortcuts: shortcutReport }, null, 1);
+  const report = JSON.stringify({ ok, packaged: app.isPackaged, checks, shortcuts: shortcutReport }, null, 1);
   if (process.env.LINGUANOTE_SMOKE_OUTPUT) fs.writeFileSync(process.env.LINGUANOTE_SMOKE_OUTPUT, report, "utf8");
   console.log(`SMOKE_RESULT ${report}`);
   app.exit(ok ? 0 : 1);
@@ -749,6 +800,9 @@ async function runSmokeTest() {
 // -- lifecycle ----------------------------------------------------------------------------------------------
 
 app.whenReady().then(() => {
+  // Electron's default menu offers reload and the developer tools: not for an installed application. Copy and paste
+  // keep working: Chromium handles those keys itself.
+  if (urls.useDist) Menu.setApplicationMenu(null);
   void startBackend();
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {

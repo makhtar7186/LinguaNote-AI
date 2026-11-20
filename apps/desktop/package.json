@@ -2,6 +2,8 @@
   "name": "@linguanote/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "Assistant local de transcription multilingue (français, wolof, anglais)",
+  "author": "Makhtar Faye",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && node scripts/start-electron.cjs\"",
@@ -10,7 +12,9 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "lint": "eslint .",
-    "smoke": "node scripts/smoke.cjs"
+    "smoke": "node scripts/smoke.cjs",
+    "smoke:packaged": "node scripts/smoke.cjs --packaged",
+    "package:installer": "electron-builder --win --publish never --config electron-builder.yml"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -24,7 +28,8 @@
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "concurrently": "^9.0.0",
-    "electron": "^45.1.0",
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
