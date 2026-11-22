@@ -396,3 +396,63 @@ def test_without_routing_the_live_behaviour_is_unchanged(monkeypatch):
         read_until(ws, "session_ended", keep=seen)
     assert built == ["faster-whisper"]
     assert [m["type"] for m in seen].count("final") == 2
+
+
+def test_a_live_session_can_be_limited_to_one_language(monkeypatch):
+    class Hinted(FakeEngine):
+        accepts_language_hint = True
+        seen: list = []
+
+        def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+            self.seen.append(language)
+            return super().transcribe(audio_path)
+
+    monkeypatch.setattr(registry, "_build", lambda _name: Hinted())
+    with connect(make_client(engine="faster-whisper")) as ws, watchdog(ws):
+        ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "language": "en"})
+        assert ws.receive_json()["type"] == "session_started"
+        send_audio(ws, tone(1.0) + silence(1.2))
+        final = read_until(ws, "final")
+        assert (final["language"], final["language_probability"]) == ("en", None)
+        ws.send_json({"type": "stop"})
+        read_until(ws, "session_ended")
+    assert Hinted.seen and set(Hinted.seen) == {"en"}
+
+
+def test_a_live_language_the_engine_cannot_serve_is_refused_at_once():
+    with connect(make_client(engine="faster-whisper")) as ws, watchdog(ws):
+        ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "language": "wo"})
+        message = ws.receive_json()
+        assert message["type"] == "error" and message["code"] == "unsupported_language" and message["fatal"] is True
+
+
+def test_an_invalid_live_language_is_an_invalid_opening():
+    with connect(make_client()) as ws, watchdog(ws):
+        ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "language": "de"})
+        assert ws.receive_json()["code"] == "invalid_message"
+
+
+def test_routing_limited_to_french_gets_ordinary_live_passages(monkeypatch):
+    class Router:
+        name, model = "language-router", "routed"
+        capabilities = EngineCapabilities(timestamps=True, language_detection=True)
+
+        def __init__(self):
+            class Hinted(FakeEngine):
+                accepts_language_hint = True
+
+                def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+                    return super().transcribe(audio_path)
+            self.router = type("R", (), {"engines": {"default": Hinted(), "fr": Hinted(), "en": Hinted(),
+                                                     "wo": FakeEngine()}})()
+
+    monkeypatch.setattr(registry, "_build", lambda _name: Router())
+    with connect(make_client(engine="language-routing")) as ws, watchdog(ws):
+        ws.send_json({"type": "start", "token": TOKEN, "protocol": 1, "language": "fr"})
+        assert ws.receive_json()["type"] == "session_started"
+        send_audio(ws, tone(1.0) + silence(1.2) + tone(1.0) + silence(1.2))
+        ws.send_json({"type": "stop"})
+        seen: list = []
+        read_until(ws, "session_ended", keep=seen)
+    # One language, no detection: short passages again (two of them), not the 10 to 20 s routing passages.
+    assert [m["type"] for m in seen].count("final") == 2

@@ -4,6 +4,7 @@ const path = require("node:path");
 const api = require("./api-client.cjs");
 const launcher = require("./backend-launcher.cjs");
 const historyClient = require("./history-client.cjs");
+const transcriptFile = require("./transcript-file.cjs");
 const { createUrlPolicy } = require("./app-urls.cjs");
 const { createBubbleController } = require("./bubble-controller.cjs");
 const { createArmGate } = require("./capture-gate.cjs");
@@ -360,6 +361,28 @@ function registerIpc() {
     return { ok: true, saved: true };
   });
 
+  // A transcript saved as text, to a place the user picks in a native dialog (the renderer never supplies a path).
+  ipcMain.handle("linguanote:transcript:saveText", async (event, args) => {
+    assertTrustedSender(event);
+    const checked = transcriptFile.validateText(args?.text);
+    if (!checked.ok) return checked;
+    // The bubble cannot take the focus: a dialog attached to it could stay behind other windows, so it opens unattached.
+    const sender = BrowserWindow.fromWebContents(event.sender);
+    const owner = sender && sender !== bubble.window ? sender : undefined;
+    const choice = await dialog.showSaveDialog(owner, {
+      title: "Enregistrer la transcription",
+      defaultPath: path.join(app.getPath("documents"), transcriptFile.defaultName(new Date())),
+      filters: [{ name: "Texte", extensions: ["txt"] }],
+    });
+    if (choice.canceled || !choice.filePath) return { ok: true, saved: false };
+    try {
+      await fs.promises.writeFile(transcriptFile.withTxtExtension(choice.filePath), transcriptFile.content(checked.text), "utf8");
+    } catch {
+      return { ok: false, code: "write_failed", message: "Le fichier n'a pas pu être écrit à cet emplacement." };
+    }
+    return { ok: true, saved: true };
+  });
+
   // Step 1 of a session: the window declares the source it is about to open. The recording indicator (the bubble) is
   // made visible NOW, before any microphone or loopback is opened, and system audio can only be armed after this.
   ipcMain.handle("linguanote:live:prepare", async (event, options) => {
@@ -384,11 +407,17 @@ function registerIpc() {
       capturePlan.clear();
       return { ok: false, code: "invalid_source", message: "Source audio inconnue." };
     }
+    const language = options?.language ?? null;
+    if (language !== null && !api.SPOKEN_LANGUAGES.includes(language)) {
+      capturePlan.clear();
+      return { ok: false, code: "unsupported_language", message: "Langue inconnue." };
+    }
     if (liveActive()) return { ok: false, code: "already_running", message: "Une session en direct est déjà en cours." };
     liveClient = new LiveClient(config, {
       onEvent: onLiveEvent,
       onState: (state) => onLiveEvent({ type: "client_state", state }),
       source: requested,
+      language,
     });
     // Claim and watch the owning window BEFORE starting, so a start that fails at once leaves nothing behind.
     disposeOwnerWatch();
@@ -525,7 +554,7 @@ async function runSmokeTest() {
     check("main page rendered with the strict CSP", mainProbe.hasRoot && /default-src 'self'/.test(mainProbe.csp ?? "") && !/unsafe-inline/.test(mainProbe.csp ?? ""), JSON.stringify(mainProbe.csp));
     check("bubble page rendered with the strict CSP", bubbleProbe.hasRoot && bubbleProbe.marker && /default-src 'self'/.test(bubbleProbe.csp ?? "") && !/unsafe-inline/.test(bubbleProbe.csp ?? ""));
     check("renderers have no Node.js (require/process undefined)", [mainProbe, bubbleProbe].every((p) => p.require === "undefined" && p.process === "undefined"));
-    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "history", "insertion", "live", "shortcuts", "transcribe"]), JSON.stringify(mainProbe.bridge));
+    check("preload exposes only the documented API", JSON.stringify(mainProbe.bridge) === JSON.stringify(["bubble", "capture", "health", "history", "insertion", "live", "shortcuts", "transcribe", "transcript"]), JSON.stringify(mainProbe.bridge));
     check("live API surface", JSON.stringify(mainProbe.live) === JSON.stringify(["onEvent", "pause", "prepare", "resume", "sendAudio", "start", "status", "stop"]), JSON.stringify(mainProbe.live));
 
     const frameProbe = `new Promise((resolve) => {
@@ -639,23 +668,52 @@ async function runSmokeTest() {
       const bubbleSaw = await run(bubble.webContents, "window.linguaNote.live.status()");
       check("the other window reads the same state", bubbleSaw.state === "ended");
 
+      // Spoken language and saving as text: what the main process refuses before anything reaches the service or disk.
+      const modes = await run(mainWindow.webContents, `(async () => {
+        const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 100)); return test(); };
+        const unknownLanguage = await window.linguaNote.live.start({ source: 'microphone', language: 'de' });
+        const health = await window.linguaNote.health();
+        const events = [];
+        const off = window.linguaNote.live.onEvent((event) => events.push(event));
+        const imposed = await window.linguaNote.live.start({ source: 'microphone', language: 'fr' });
+        await wait(() => events.some((e) => e.type === 'client_state' && ['active', 'failed'].includes(e.state)), 90000);
+        const reached = events.some((e) => e.type === 'session_started');
+        await window.linguaNote.live.stop();
+        await wait(() => events.some((e) => e.type === 'session_ended' || (e.type === 'client_state' && e.state === 'failed')), 30000);
+        off();
+        const emptyText = await window.linguaNote.transcript.saveText('   ');
+        const notText = await window.linguaNote.transcript.saveText(42);
+        return { unknownLanguage, languages: health.languages, imposed, reached, emptyText, notText };
+      })()`);
+      check("an unknown spoken language is refused, never defaulted", modes.unknownLanguage.ok === false && modes.unknownLanguage.code === "unsupported_language", JSON.stringify(modes.unknownLanguage));
+      check("the service reports the languages it can impose", Array.isArray(modes.languages) && modes.languages.includes("fr"), JSON.stringify(modes.languages));
+      check("a live session with French imposed opens on the real service", modes.imposed.ok && modes.reached, JSON.stringify(modes.imposed));
+      check("saving refuses empty or non-text content without opening a dialog", modes.emptyText.code === "empty_text" && modes.notText.code === "invalid_argument", JSON.stringify({ a: modes.emptyText, b: modes.notText }));
+
       // History through the real bridge, IPC and service. The run's data folder is a throw-away one (see scripts/smoke.cjs).
       const history = await run(mainWindow.webContents, `(async () => {
         const h = window.linguaNote.history;
+        const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 100)); return test(); };
+        const runLive = async () => {
+          const events = [];
+          const off = window.linguaNote.live.onEvent((event) => events.push(event));
+          await window.linguaNote.live.start({ source: 'microphone' });
+          await wait(() => events.some((e) => e.type === 'client_state' && e.state === 'active'), 90000);
+          await window.linguaNote.live.stop();
+          await wait(() => events.some((e) => e.type === 'session_ended'), 30000);
+          off();
+        };
         const before = await h.getSettings();
-        const offLive = await h.list({});
+        const byDefault = await h.list({}); // the sessions of the previous checks, recorded because the history is on
         const badRetention = await h.setSettings(true, 13);
         const badId = await h.get('../health');
         const noConfirm = await h.removeAll(false);
+        await h.removeAll(true);
+        const disabled = await h.setSettings(false, 30);
+        await runLive();
+        const offLive = await h.list({});
         const enabled = await h.setSettings(true, 30);
-        const events = [];
-        const off = window.linguaNote.live.onEvent((event) => events.push(event));
-        await window.linguaNote.live.start({ source: 'microphone' });
-        const wait = async (test, ms) => { const end = Date.now() + ms; while (!test() && Date.now() < end) await new Promise((r) => setTimeout(r, 100)); return test(); };
-        await wait(() => events.some((e) => e.type === 'client_state' && e.state === 'active'), 90000);
-        await window.linguaNote.live.stop();
-        await wait(() => events.some((e) => e.type === 'session_ended'), 30000);
-        off();
+        await runLive();
         const listed = await h.list({});
         const first = listed.data?.items?.[0];
         const detail = first ? await h.get(first.id) : null;
@@ -663,12 +721,12 @@ async function runSmokeTest() {
         const deleted = first ? await h.remove(first.id) : null;
         const afterDelete = await h.list({});
         const all = await h.removeAll(true);
-        await h.setSettings(false, 30);
-        return { before, offLive, badRetention, badId, noConfirm, enabled, listed, detail, renamed, deleted, afterDelete, all };
+        return { before, byDefault, disabled, offLive, badRetention, badId, noConfirm, enabled, listed, detail, renamed, deleted, afterDelete, all };
       })()`);
-      check("history is off by default", history.before.ok && history.before.data.enabled === false && history.offLive.data.total === 0, JSON.stringify(history.before));
+      check("history is on by default and records a session", history.before.ok && history.before.data.enabled === true && history.byDefault.data.total >= 1, JSON.stringify({ before: history.before, total: history.byDefault.data?.total }));
+      check("history turned off records nothing", history.disabled.ok && history.disabled.data.enabled === false && history.offLive.data.total === 0, JSON.stringify(history.offLive.data));
       check("history refuses an invalid retention, a path-like id and an unconfirmed wipe", history.badRetention.ok === false && history.badId.ok === false && history.noConfirm.ok === false, JSON.stringify({ a: history.badRetention, b: history.badId, c: history.noConfirm }));
-      check("history can be turned on through the bridge", history.enabled.ok && history.enabled.data.enabled === true);
+      check("history can be turned back on through the bridge", history.enabled.ok && history.enabled.data.enabled === true);
       check("a live session is recorded once the history is on, with the source the window declared", history.listed.ok && history.listed.data.total === 1 && history.detail.data.source === "microphone" && history.detail.data.status === "complete", JSON.stringify(history.listed.data?.items?.[0]));
       check("a session can be renamed and deleted, and deleting everything works", history.renamed.ok && history.deleted.ok && history.afterDelete.data.total === 0 && history.all.ok);
     }

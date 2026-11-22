@@ -1,6 +1,7 @@
 """The transcription history: settings, sessions, segments, search, deletion, retention.
 
-Policy (docs/security.md): nothing is stored unless the user turned the history on; only text, timing and a few
+Policy (docs/security.md): the history is on by default (the product owner's choice, 2026-11-22) and the user can turn
+it off at any time, after which nothing more is stored; only text, timing and a few
 facts about the session are kept (no audio, no file names); everything expires after the retention period the user
 chose; the user can delete one session or everything, and deleted text is overwritten and compacted away.
 """
@@ -19,6 +20,8 @@ logger = logging.getLogger("linguanote.history")
 
 ALLOWED_RETENTION_DAYS: tuple[int | None, ...] = (7, 30, 90, 365, None)  # None = until deleted by the user
 DEFAULT_RETENTION_DAYS = 30
+# Used until the user makes a choice; an explicit choice (on or off) is stored and always wins.
+DEFAULT_ENABLED = True
 MAX_SEGMENT_CHARS = 20_000
 MAX_TITLE_CHARS = 200
 MAX_PAGE_SIZE = 200
@@ -33,7 +36,7 @@ class HistoryError(ValueError):
 
 @dataclass(frozen=True)
 class HistorySettings:
-    enabled: bool = False
+    enabled: bool = DEFAULT_ENABLED
     retention_days: int | None = DEFAULT_RETENTION_DAYS
 
 
@@ -77,7 +80,9 @@ class HistoryRepository:
             days = DEFAULT_RETENTION_DAYS
         if days not in ALLOWED_RETENTION_DAYS:
             days = DEFAULT_RETENTION_DAYS
-        return HistorySettings(enabled=rows.get("history_enabled") == "1", retention_days=days)
+        stored = rows.get("history_enabled")
+        enabled = DEFAULT_ENABLED if stored is None else stored == "1"
+        return HistorySettings(enabled=enabled, retention_days=days)
 
     def set_settings(self, *, enabled: bool, retention_days: int | None) -> HistorySettings:
         if retention_days not in ALLOWED_RETENTION_DAYS:
@@ -129,7 +134,7 @@ class HistoryRepository:
             if only_if_enabled:
                 connection.execute("BEGIN IMMEDIATE")  # takes the write lock first: no settings change can slip in
                 enabled = connection.execute("SELECT value FROM settings WHERE key = 'history_enabled'").fetchone()
-                if enabled is None or enabled[0] != "1":
+                if (DEFAULT_ENABLED is False and enabled is None) or (enabled is not None and enabled[0] != "1"):
                     return False
             if position is None:
                 position = connection.execute(

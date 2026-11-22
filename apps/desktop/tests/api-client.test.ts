@@ -108,3 +108,21 @@ describe("health", () => {
     expect(await api.health(config, fetchImpl)).toMatchObject({ ok: false, code: "service_unavailable" });
   });
 });
+
+describe("spoken language", () => {
+  it("sends the imposed language as a form field, and none in the several-languages mode", async () => {
+    const fetchImpl = backend({ post: () => jsonResponse({ text: "ok" }) });
+    await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes, language: "wo" }, fetchImpl);
+    await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes }, fetchImpl);
+    const [imposed, auto] = posts(fetchImpl).map(([, init]) => (init as RequestInit | undefined)?.body as FormData);
+    expect(imposed.get("language")).toBe("wo");
+    expect(auto.get("language")).toBeNull();
+  });
+
+  it("never uploads an unknown language", async () => {
+    const fetchImpl = backend({ post: () => jsonResponse({ text: "ok" }) });
+    const result = await api.transcribe(config, { name: "a.wav", type: "audio/wav", bytes, language: "de" }, fetchImpl);
+    expect(result).toEqual({ ok: false, code: "unsupported_language", message: "Langue inconnue." });
+    expect(posts(fetchImpl)).toHaveLength(0);
+  });
+});

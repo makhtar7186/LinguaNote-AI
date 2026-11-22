@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { LanguagePicker } from "../components/LanguagePicker";
 import { LevelMeter, SilenceWarning, SourcePicker } from "../components/SourcePicker";
 import { useCapturePreferences, useMicrophones } from "../hooks/useCapturePreferences";
 import { useLiveTranscription } from "../hooks/useLiveTranscription";
+import { useServiceLanguages } from "../hooks/useServiceLanguages";
 import { sourceLabel } from "../services/audioSource";
+import { languageAvailable, requestedLanguage } from "../services/languageMode";
+import { transcriptText } from "../services/liveReducer";
+import { saveTranscriptText } from "../services/transcriptFile";
 import type { ShortcutReport } from "../types";
 import { bubbleMode, statusLabel, tail } from "./bubbleMode";
 
@@ -22,15 +27,17 @@ const prettyKey = (accelerator: string) => accelerator.replace("CommandOrControl
 export default function BubbleApp() {
   const preferences = useCapturePreferences();
   // A shortcut starts a session with this window's own current choice: shown in the panel, never implicit.
+  const language = requestedLanguage(preferences.language);
   const live = useLiveTranscription({
     handleCommands: true,
-    defaultStart: { source: preferences.source, deviceId: preferences.deviceId },
+    defaultStart: { source: preferences.source, deviceId: preferences.deviceId, language },
   });
   const microphones = useMicrophones(live.state.status);
   const [openedByUser, setOpenedByUser] = useState(false);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const [shortcuts, setShortcuts] = useState<ShortcutReport | null>(null);
   const [refusal, setRefusal] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const mode = bubbleMode(live.state);
   const text = tail(live.state);
   const bubbleApi = window.linguaNote?.bubble;
@@ -47,6 +54,20 @@ export default function BubbleApp() {
   useEffect(() => {
     void bubbleApi?.setExpanded(expanded);
   }, [expanded, bubbleApi]);
+
+  // Asked again each time the panel opens: the service may have finished starting since.
+  const languages = useServiceLanguages(expanded);
+  const languageUsable = languageAvailable(preferences.language, languages);
+
+  async function saveText() {
+    setSaveMessage("");
+    try {
+      const outcome = await saveTranscriptText(transcriptText(live.state).final);
+      if (outcome === "saved") setSaveMessage("Fichier texte enregistré.");
+    } catch (cause) {
+      setSaveMessage(cause instanceof Error ? cause.message : "L’enregistrement a échoué.");
+    }
+  }
 
   useEffect(() => {
     void window.linguaNote?.shortcuts?.getReport().then((report) => setShortcuts(parseShortcutReport(report))).catch(() => undefined);
@@ -92,16 +113,19 @@ export default function BubbleApp() {
       )}
       {live.silent && live.state.source && <SilenceWarning source={live.state.source} />}
       {!live_ && (
-        <SourcePicker
-          compact
-          source={preferences.source}
-          deviceId={preferences.deviceId}
-          devices={microphones}
-          systemAvailable={Boolean(window.linguaNote?.capture)}
-          disabled={false}
-          onSource={preferences.setSource}
-          onDevice={preferences.setDeviceId}
-        />
+        <>
+          <SourcePicker
+            compact
+            source={preferences.source}
+            deviceId={preferences.deviceId}
+            devices={microphones}
+            systemAvailable={Boolean(window.linguaNote?.capture)}
+            disabled={false}
+            onSource={preferences.setSource}
+            onDevice={preferences.setDeviceId}
+          />
+          <LanguagePicker compact value={preferences.language} available={languages} onChange={preferences.setLanguage} />
+        </>
       )}
 
       <p className="bubble-transcript" aria-live="polite">
@@ -116,16 +140,24 @@ export default function BubbleApp() {
         <p key={`${notice.code}-${index}`} className="bubble-notice" role="alert">{notice.message}</p>
       ))}
       {refusal && <p className="bubble-notice" role="alert">{refusal}</p>}
+      {saveMessage && <p className="bubble-info" role="status">{saveMessage}</p>}
 
       <div className="bubble-controls">
         {!live_ ? (
-          <button
-            className="bubble-primary"
-            onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId })}
-            disabled={!live.supported}
-          >
-            Démarrer
-          </button>
+          <>
+            <button
+              className="bubble-primary"
+              onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId, language })}
+              disabled={!live.supported || !languageUsable}
+            >
+              Démarrer
+            </button>
+            {live.state.finals.length > 0 && (
+              <button className="bubble-secondary" onClick={() => void saveText()} title="Enregistrer tout le texte de la session dans un fichier .txt">
+                Enregistrer .txt
+              </button>
+            )}
+          </>
         ) : (
           <>
             {live.state.status === "live" && (

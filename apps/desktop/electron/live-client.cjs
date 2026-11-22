@@ -48,9 +48,12 @@ class LiveClient {
    * @param {{WebSocketImpl?: typeof WebSocket, onEvent: (event: object) => void,
    *          onState?: (state: string) => void, now?: () => number, options?: object}} deps
    */
-  constructor(config, { WebSocketImpl = globalThis.WebSocket, onEvent, onState = () => {}, now = Date.now, options = {}, source = null }) {
+  constructor(config, {
+    WebSocketImpl = globalThis.WebSocket, onEvent, onState = () => {}, now = Date.now, options = {}, source = null, language = null,
+  }) {
     this.config = config;
     this.source = source; // informational: stored with the session in the history when it is on
+    this.language = language; // one imposed language, or null: several languages, detected by the service
     this.WebSocketImpl = WebSocketImpl;
     this.onEvent = onEvent;
     this.onState = onState;
@@ -168,7 +171,10 @@ class LiveClient {
       if (ws !== this.ws) return;
       const opening = resume
         ? { type: "resume", token: this.config.token, protocol: PROTOCOL, session_id: this.sessionId, last_event_id: this.lastEventId }
-        : { type: "start", token: this.config.token, protocol: PROTOCOL, ...(this.source ? { source: this.source } : {}) };
+        : {
+          type: "start", token: this.config.token, protocol: PROTOCOL,
+          ...(this.source ? { source: this.source } : {}), ...(this.language ? { language: this.language } : {}),
+        };
       this.#sendJson(opening);
     };
     ws.onmessage = (event) => {

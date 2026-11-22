@@ -64,7 +64,10 @@ Limites connues : le son capturé est celui de tout le système, notifications c
 
 | Élément | État |
 | --- | --- |
-| Politique de conservation et de suppression, définie **avant** la base | fait ([security.md](security.md)) : désactivé par défaut, durée au choix, suppression réelle |
+| Politique de conservation et de suppression, définie **avant** la base | fait ([security.md](security.md)) : activé par défaut depuis le 2026-11-22 (désactivable), durée au choix, suppression réelle |
+| Mode une seule langue (fr, en, wo) ou plusieurs langues, pour le direct et les fichiers | fait (service, IPC, fenêtre principale, bulle ; tests unitaires, API, fumée Electron). Wolof seul mesuré sur 12 clips lus seulement |
+| Enregistrer la transcription en .txt (fichier et direct) | fait (boîte de dialogue système, validation dans le processus principal) |
+| Choix de la source dans la bulle | corrigé : boutons au lieu de listes déroulantes, préférences partagées entre les fenêtres. Non éprouvé à la souris sur l'application réelle |
 | Stockage SQLite (WAL, `secure_delete`, migrations par `user_version`, refuse un schéma plus récent) | fait ; suppression vérifiée en relisant les octets bruts du fichier et de son journal |
 | Recherche plein texte (FTS5, sans accents ni casse, entrées hostiles neutralisées) | fait |
 | Enregistrement du direct énoncé par énoncé ; import de fichier enregistré si l'historique est activé | fait ; échec de stockage signalé sans perdre le texte |

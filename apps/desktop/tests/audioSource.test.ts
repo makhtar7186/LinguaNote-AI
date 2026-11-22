@@ -35,7 +35,16 @@ describe("capture preferences", () => {
   const storageWith = (value: string | null) => ({ getItem: () => value });
 
   it("reads a saved choice", () => {
-    expect(loadPreferences(storageWith('{"source":"system","deviceId":"abc"}'))).toEqual({ source: "system", deviceId: "abc" });
+    expect(loadPreferences(storageWith('{"source":"system","deviceId":"abc","language":"wo"}')))
+      .toEqual({ source: "system", deviceId: "abc", language: "wo" });
+  });
+
+  it("reads a choice saved before the language existed as several languages", () => {
+    expect(loadPreferences(storageWith('{"source":"system","deviceId":"abc"}')).language).toBe("auto");
+  });
+
+  it.each([['"de"'], ['42'], ['null'], ['"FR"']])("never imposes an unknown language (%s): several languages instead", (raw) => {
+    expect(loadPreferences(storageWith(`{"source":"microphone","deviceId":"","language":${raw}}`)).language).toBe("auto");
   });
 
   it.each([
@@ -45,21 +54,21 @@ describe("capture preferences", () => {
   });
 
   it("ignores a malformed or oversized device id", () => {
-    expect(loadPreferences(storageWith('{"source":"both","deviceId":12}'))).toEqual({ source: "both", deviceId: "" });
+    expect(loadPreferences(storageWith('{"source":"both","deviceId":12}'))).toEqual({ source: "both", deviceId: "", language: "auto" });
     expect(loadPreferences(storageWith(JSON.stringify({ source: "both", deviceId: "x".repeat(600) })))).toMatchObject({ deviceId: "" });
   });
 
   it("survives storage that is missing or throws", () => {
     expect(loadPreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(loadPreferences({ getItem: () => { throw new Error("blocked"); } })).toEqual(DEFAULT_PREFERENCES);
-    expect(() => savePreferences({ source: "system", deviceId: "" }, { setItem: () => { throw new Error("full"); } })).not.toThrow();
-    expect(() => savePreferences({ source: "system", deviceId: "" }, undefined)).not.toThrow();
+    expect(() => savePreferences({ source: "system", deviceId: "", language: "auto" }, { setItem: () => { throw new Error("full"); } })).not.toThrow();
+    expect(() => savePreferences({ source: "system", deviceId: "", language: "auto" }, undefined)).not.toThrow();
   });
 
   it("saves and reloads the choice", () => {
     const store = new Map<string, string>();
     const storage = { getItem: (key: string) => store.get(key) ?? null, setItem: vi.fn((key: string, value: string) => { store.set(key, value); }) };
-    savePreferences({ source: "both", deviceId: "mic-1" }, storage);
-    expect(loadPreferences(storage)).toEqual({ source: "both", deviceId: "mic-1" });
+    savePreferences({ source: "both", deviceId: "mic-1", language: "fr" }, storage);
+    expect(loadPreferences(storage)).toEqual({ source: "both", deviceId: "mic-1", language: "fr" });
   });
 });

@@ -1,4 +1,5 @@
-import type { Limits, Segment, ServiceHealth, TranscriptionResponse } from "../types";
+import type { Limits, Segment, ServiceHealth, SpokenLanguage, TranscriptionResponse } from "../types";
+import { isSpokenLanguage } from "./languageMode";
 
 const DEV_API = import.meta.env.VITE_TRANSCRIPTION_API || "http://127.0.0.1:8765";
 const DEV_TIMEOUT_MS = 15 * 60_000;
@@ -80,6 +81,8 @@ export function parseHealth(value: unknown): ServiceHealth {
     model: optString(value.model),
     setup_message: optString(value.setup_message),
     ffmpeg_available: typeof value.ffmpeg_available === "boolean" ? value.ffmpeg_available : undefined,
+    // Absent from an older service: undefined, i.e. "unknown", not "nothing available".
+    languages: Array.isArray(value.languages) ? value.languages.filter(isSpokenLanguage) : undefined,
     limits: parseLimits(value.limits),
     message: optString(value.message) ?? undefined,
     code: optString(value.code) ?? undefined,
@@ -123,17 +126,20 @@ export async function getServiceHealth(): Promise<ServiceHealth> {
   }
 }
 
-export async function transcribeFile(audioFile: File): Promise<TranscriptionResponse> {
+/** `language`: one imposed language; undefined: several languages, detected by the service. */
+export async function transcribeFile(audioFile: File, language?: SpokenLanguage): Promise<TranscriptionResponse> {
   if (window.linguaNote) {
     const raw = await window.linguaNote.transcribe({
       name: audioFile.name,
       type: audioFile.type || "application/octet-stream",
       bytes: new Uint8Array(await audioFile.arrayBuffer()),
+      ...(language ? { language } : {}),
     });
     return parseTranscription(unwrapIpc(raw));
   }
   const form = new FormData();
   form.append("file", audioFile, audioFile.name);
+  if (language) form.append("language", language);
   const response = await devFetch("/api/v1/transcriptions", { method: "POST", body: form });
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {

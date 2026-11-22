@@ -256,14 +256,14 @@ describe("source choice in the bubble", () => {
     const env = install();
     render(<BubbleApp />);
     fireEvent.click(screen.getByRole("button", { name: /Ouvrir/ }));
-    const select = await screen.findByLabelText("Source audio");
-    fireEvent.change(select, { target: { value: "system" } });
+    fireEvent.click(await screen.findByRole("radio", { name: "Ordinateur" }));
+    expect(screen.getByRole("radio", { name: "Ordinateur" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByText("Démarrer"));
     await waitFor(() => expect(env.live.start).toHaveBeenCalledWith({ source: "system" }));
 
     env.emit({ type: "client_state", state: "active" });
     env.emit({ type: "capture_source", source: "system" });
-    expect(screen.queryByLabelText("Source audio")).toBeNull(); // cannot change source mid-session
+    expect(screen.queryByRole("radiogroup", { name: "Source audio" })).toBeNull(); // cannot change source mid-session
     expect(screen.getByTestId("active-source").textContent).toContain("Son de l’ordinateur");
   });
 
@@ -271,11 +271,39 @@ describe("source choice in the bubble", () => {
     const env = install();
     render(<BubbleApp />);
     fireEvent.click(screen.getByRole("button", { name: /Ouvrir/ }));
-    fireEvent.change(await screen.findByLabelText("Source audio"), { target: { value: "both" } });
+    fireEvent.click(await screen.findByRole("radio", { name: "Les deux" }));
 
     env.command({ action: "toggle_live" });
     await waitFor(() => expect(env.live.start).toHaveBeenCalledWith({ source: "both" }));
     expect(env.options().source).toBe("both");
+  });
+
+  it("uses no drop-down list: the bubble never takes the focus, and Windows does not open one reliably there", async () => {
+    install();
+    const { container } = render(<BubbleApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Ouvrir/ }));
+    await screen.findByRole("radiogroup", { name: "Source audio" });
+    expect(container.querySelector("select")).toBeNull();
+  });
+
+  it("imposes the language chosen in the bubble, and starts several-language sessions without one", async () => {
+    const env = install();
+    render(<BubbleApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Ouvrir/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: "WO" }));
+    fireEvent.click(screen.getByText("Démarrer"));
+    await waitFor(() => expect(env.live.start).toHaveBeenCalledWith({ source: "microphone", language: "wo" }));
+  });
+
+  it("follows a choice made in the main window (shared preferences)", async () => {
+    install();
+    render(<BubbleApp />);
+    fireEvent.click(screen.getByRole("button", { name: /Ouvrir/ }));
+    await screen.findByRole("radio", { name: "Micro" });
+    window.localStorage.setItem("linguanote.capture", JSON.stringify({ source: "both", deviceId: "", language: "en" }));
+    window.dispatchEvent(new StorageEvent("storage", { key: "linguanote.capture" }));
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Les deux" }).getAttribute("aria-checked")).toBe("true"));
+    expect(screen.getByRole("radio", { name: "EN" }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("a shortcut never silently picks another source than the one shown", async () => {

@@ -20,17 +20,22 @@ Ne charge aucun modèle et ne télécharge rien.
   "model": "base",
   "setup_message": null,
   "ffmpeg_available": true,
+  "languages": ["en", "fr"],
   "limits": { "max_upload_bytes": 52428800, "max_audio_seconds": 600.0, "extensions": [".aac", ".flac", "..."] }
 }
 ```
 
 `limits.max_audio_seconds` est la limite **effective** : la valeur configurée, abaissée à ce que le moteur choisi peut traiter (Omnilingual : 39 s). Les clients (interface, pont MCP, client Electron) lisent ici la taille maximale et les extensions au lieu de les dupliquer ; ils ne gardent que des valeurs de repli (50 Mio, extensions usuelles) quand le service est injoignable, et le serveur reste l'autorité finale.
 
+`languages` : les langues que le **mode une seule langue** peut imposer avec le moteur configuré (`faster-whisper` : `en`, `fr` ; `language-routing` : `fr`, `en`, `wo` ; liste vide si le moteur est indisponible). Le mode plusieurs langues (sans `language`) est toujours possible.
+
 `engine_selected: true` signifie que la dépendance est installée, pas que les poids sont déjà téléchargés. `setup_message` décrit ce qui manque (moteur ou FFmpeg).
 
 ## `POST /api/v1/transcriptions`
 
 Requête `multipart/form-data`, champ `file` (extension en liste blanche, voir `limits.extensions`). FFmpeg extrait la première piste audio en PCM mono 16 kHz.
+
+Champ facultatif `language` : absent, vide ou `auto` = **plusieurs langues** (la langue est estimée passage par passage, comportement historique). `fr`, `en` ou `wo` = **une seule langue** pour tout le fichier : la détection est sautée, le moteur de cette langue reçoit tout l'audio (Whisper avec la langue imposée ; le modèle wolof du moteur `language-routing` pour `wo`). La réponse porte alors `language` = la langue choisie et `language_probability` = `null` (rien n'a été estimé). Une langue que le moteur ne sait pas imposer (`wo` sans `language-routing`) ou inconnue est refusée en `422 unsupported_language`, jamais remplacée par une autre. Attention : imposer une langue fait transcrire **toute** la parole dans cette langue ; un passage dans une autre langue est mal transcrit, voire traduit.
 
 Réponse `200` :
 
@@ -57,7 +62,7 @@ Réponse `200` :
 
 ## Historique : `/api/v1/history`
 
-Désactivé par défaut (voir [security.md](security.md)). Toutes les routes exigent le jeton. Rien n'est écrit sur le disque tant que l'historique est désactivé : même le fichier de base n'est pas créé.
+**Activé par défaut** depuis le 2026-11-22 (choix du porteur du projet ; voir [security.md](security.md)) ; l'utilisateur peut le désactiver à tout moment et ce choix est conservé. Toutes les routes exigent le jeton. Lire les réglages ou la liste ne crée aucun fichier ; la base est créée à la première session enregistrée. Désactivé, plus rien n'est écrit.
 
 | Route | Rôle |
 | --- | --- |
@@ -132,7 +137,7 @@ Les WebSocket ne sont pas soumis au CORS et le middleware HTTP ne s'y applique p
 
 | Message | Contenu |
 | --- | --- |
-| `{"type":"start","token":"…","protocol":1,"source":"microphone"}` | Ouvre une session. `source` (`microphone`, `system` ou `both`, facultatif) est **purement informatif** : il est enregistré avec la session si l'historique est activé, et ne change rien au traitement. Toute autre valeur est refusée (`invalid_message`). |
+| `{"type":"start","token":"…","protocol":1,"source":"microphone","language":"fr"}` | Ouvre une session. `source` (`microphone`, `system` ou `both`, facultatif) est **purement informatif** : il est enregistré avec la session si l'historique est activé, et ne change rien au traitement. `language` (`fr`, `en` ou `wo`, facultatif) impose une seule langue à toute la session, comme pour les fichiers ; absent = plusieurs langues. Avec `language-routing`, une session imposée en `fr` ou `en` retrouve des énoncés courts et du texte provisoire ; en `wo` ou sans langue, elle garde les passages de 10 à 20 s sans texte provisoire. Toute autre valeur est refusée (`invalid_message`) ; une langue que le moteur ne sait pas imposer ferme la session avec l'erreur fatale `unsupported_language`. |
 | `{"type":"resume","token":"…","protocol":1,"session_id":"…","last_event_id":N}` | Rattache une nouvelle connexion à une session détachée ; le serveur rejoue les événements d'`event_id` > N. |
 | trame binaire | 4 octets `seq` (uint32 big-endian, commence à 1, +1 par trame) puis le PCM (2 à 65 536 octets, nombre pair). Le client Electron envoie au plus 32 000 octets (1 s) par trame. |
 | `{"type":"stop"}` | Termine proprement : le reste de l'audio est finalisé, puis `session_ended`. |
