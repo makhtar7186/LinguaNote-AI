@@ -1,14 +1,17 @@
-import type { AudioSourceKind } from "../types";
+import type { AudioSourceKind, LanguageMode } from "../types";
 import { DEFAULT_SOURCE, isAudioSourceKind } from "./audioSource";
+import { isLanguageMode } from "./languageMode";
 
 export interface CapturePreferences {
   source: AudioSourceKind;
   /** Microphone chosen by the user; empty means the system default. */
   deviceId: string;
+  /** Several languages (detected) or one imposed language; applies to live sessions and imported files. */
+  language: LanguageMode;
 }
 
-const KEY = "linguanote.capture";
-export const DEFAULT_PREFERENCES: CapturePreferences = { source: DEFAULT_SOURCE, deviceId: "" };
+export const KEY = "linguanote.capture";
+export const DEFAULT_PREFERENCES: CapturePreferences = { source: DEFAULT_SOURCE, deviceId: "", language: "auto" };
 
 /**
  * Remembers the user's choice between launches. Browser storage can be blocked or hold anything, so every read is
@@ -19,10 +22,11 @@ export function loadPreferences(storage: Pick<Storage, "getItem"> | undefined = 
   try {
     const parsed: unknown = JSON.parse(storage?.getItem(KEY) ?? "null");
     if (typeof parsed !== "object" || parsed === null) return DEFAULT_PREFERENCES;
-    const { source, deviceId } = parsed as { source?: unknown; deviceId?: unknown };
+    const { source, deviceId, language } = parsed as { source?: unknown; deviceId?: unknown; language?: unknown };
     return {
       source: isAudioSourceKind(source) ? source : DEFAULT_SOURCE,
       deviceId: typeof deviceId === "string" && deviceId.length <= 512 ? deviceId : "",
+      language: isLanguageMode(language) ? language : "auto",
     };
   } catch {
     return DEFAULT_PREFERENCES;

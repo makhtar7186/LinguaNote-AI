@@ -59,3 +59,14 @@ footer { text-align:center;color:#a0a8b7;font-size:9px;padding:18px 0 0; }footer
 .language-wo { color:#7b4a12; background:#fff3e0; border-color:#f1dcb8; }
 .language-fr { color:#1f4f9c; background:#eaf1ff; border-color:#cfdcf6; }
 .language-en { color:#216a45; background:#e9f7ef; border-color:#cde9d9; }
+/* Spoken language: several (detected) or one imposed language, for imports and live sessions. */
+.language-picker { display:flex; flex-direction:column; align-items:center; gap:6px; }
+.language-picker .source-help, .language-warning { max-width:520px; font-size:10px; line-height:1.5; }
+.language-warning { color:#8a6a1f; }
+.source-label { font-size:10px; color:#6b7490; }
+.choice-group { display:inline-flex; flex-wrap:wrap; justify-content:center; gap:6px; }
+.choice { border:1px solid #e2e7f2; background:#fff; color:#5f6c86; border-radius:7px; padding:6px 11px; font-size:11px; font-weight:600; cursor:pointer; }
+.choice:hover:not(:disabled) { border-color:#c7cdf0; color:#434fb8; }
+.choice.is-selected { background:#6671d6; border-color:#6671d6; color:#fff; }
+.choice:disabled { opacity:.5; cursor:not-allowed; }
+.result-actions { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }

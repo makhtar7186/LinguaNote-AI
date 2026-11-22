@@ -20,6 +20,8 @@ class StartMessage(_Strict):
     protocol: int
     # What the client listens to. Informational: it is stored with the session in the history, nothing else.
     source: Literal["microphone", "system", "both"] | None = None
+    # One language for the whole session; absent: several languages, detected passage by passage.
+    language: Literal["fr", "en", "wo"] | None = None
 
 
 class ResumeMessage(_Strict):

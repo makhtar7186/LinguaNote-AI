@@ -73,6 +73,12 @@ describe("parseTranscription", () => {
 });
 
 describe("parseHealth", () => {
+  it("keeps only known languages, and tells an older service (no list) apart from an empty list", () => {
+    expect(parseHealth({ ok: true, languages: ["fr", "wo", "de", 3] }).languages).toEqual(["fr", "wo"]);
+    expect(parseHealth({ ok: true, languages: [] }).languages).toEqual([]);
+    expect(parseHealth({ ok: true }).languages).toBeUndefined();
+  });
+
   it("ignores malformed limits", () => {
     expect(parseHealth({ ok: true, limits: { max_upload_bytes: "x" } }).limits).toBeUndefined();
   });

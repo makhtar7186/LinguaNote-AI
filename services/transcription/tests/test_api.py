@@ -291,3 +291,49 @@ def test_engine_is_loaded_once_under_concurrency(monkeypatch):
     for t in threads:
         t.join()
     assert len(built) == 1
+
+
+# -- single-language mode ---------------------------------------------------------------------------------------
+
+class HintedFakeEngine(FakeEngine):
+    accepts_language_hint = True
+
+    def __init__(self):
+        self.languages: list = []
+
+    def transcribe(self, audio_path: Path, language: str | None = None) -> TranscriptionResult:
+        self.languages.append(language)
+        return super().transcribe(audio_path)
+
+
+def test_health_lists_the_languages_the_single_language_mode_offers(settings):
+    body = client_for(replace(settings, engine="faster-whisper")).get("/health").json()
+    expected = ["en", "fr"] if body["engine_selected"] else []
+    assert body["languages"] == expected  # faster-whisper never offers Wolof
+    assert registry._engine is None
+
+
+def test_an_unknown_language_is_refused_before_any_work(settings, use_fake_engine, tmp_path):
+    response = post_file(client_for(settings), "a.wav", make_wav(tmp_path / "a.wav").read_bytes(), data={"language": "de"})
+    assert response.status_code == 422 and response.json()["code"] == "unsupported_language"
+    assert registry._engine is None
+
+
+@needs_ffmpeg
+def test_wolof_is_refused_by_an_engine_without_a_wolof_model(settings, use_fake_engine, tmp_path):
+    response = post_file(client_for(settings), "a.wav", make_wav(tmp_path / "a.wav").read_bytes(), data={"language": "wo"})
+    assert response.status_code == 422 and response.json()["code"] == "unsupported_language"
+    assert "wolof" in response.json()["detail"]
+
+
+@needs_ffmpeg
+def test_a_chosen_language_is_imposed_and_reported_as_chosen(settings, monkeypatch, tmp_path):
+    engine = HintedFakeEngine()
+    monkeypatch.setattr(registry, "_build", lambda _name: engine)
+    client = client_for(settings)
+    chosen = post_file(client, "a.wav", make_wav(tmp_path / "a.wav").read_bytes(), data={"language": "en"})
+    assert chosen.status_code == 200
+    assert (chosen.json()["language"], chosen.json()["language_probability"]) == ("en", None)
+    auto = post_file(client, "a.wav", make_wav(tmp_path / "a.wav").read_bytes(), data={"language": "auto"})
+    assert auto.status_code == 200 and auto.json()["language"] == "fr"  # detected, as before
+    assert engine.languages == ["en", None]

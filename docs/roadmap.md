@@ -28,7 +28,7 @@ Prochaine action côté données : réunir des extraits **spontanés et bruités
 | Interface : texte définitif et provisoire, état, notices d'erreur, micro libéré à l'arrêt, à l'erreur et à la fermeture | fait (tests de composants) |
 | **Non vérifié** | la fenêtre Electron avec un vrai microphone ; la capture micro (ScriptProcessor, voir dette) ; la qualité sur de la parole réelle, bruitée ou en wolof ; la latence en conditions réelles (inférence sérialisée sur CPU : un énoncé est finalisé après quelques secondes) |
 
-Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé coupé de force après 15 s au point le plus silencieux (un mot peut être divisé) ; un `partial` est abandonné si le worker est occupé ; une seule session à la fois ; langue estimée par énoncé uniquement, sans reconnaissance du code-switching.
+Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé coupé de force après 15 s au point le plus silencieux (un mot peut être divisé) ; un `partial` est abandonné si le worker est occupé ; une seule session à la fois ; en wolof (routage, modèle M9), le direct est environ 1,25 fois plus lent que l'audio sur le processeur de développement : 10 min de parole continue finissent en erreur `overloaded` et les derniers passages en file sont perdus (mesuré le 2026-11-16, voir [packaging.md](packaging.md)) ; langue estimée par énoncé uniquement, sans reconnaissance du code-switching.
 
 ## Phase 3 - Bulle flottante (implémentée, vérifiée sans affichage à l'écran)
 
@@ -41,7 +41,7 @@ Limites connues : seuil de silence non adaptatif au bruit ambiant ; énoncé cou
 | Indicateur d'enregistrement clair, jamais caché | fait : anneau rouge pulsant + point REC ; démarrer ouvre toujours la bulle ; elle ne peut pas être masquée pendant l'enregistrement |
 | Bulle réactive, indépendante des traitements longs | fait par construction (la session et les événements sont dans le processus principal, diffusés à toutes les fenêtres) |
 | Micro : pas de fuite à l'arrêt, à la pause, à la fermeture ni quand ces actions croisent l'ouverture du micro | fait : jeton d'époque + verrou de démarrage ; 5 tests de course dont la suppression des gardes fait échouer |
-| **Non vérifié** | l'apparence réelle (transparence, ombres, animations) ; le glisser-déposer de la bulle à la souris ; plusieurs écrans ; un vrai microphone ; l'application packagée ; Windows seulement |
+| **Non vérifié** | la transparence et les animations (seul l'état inactif a été regardé, le 2026-11-06, sur l'application installée) ; le glisser-déposer de la bulle à la souris ; plusieurs écrans ; un vrai microphone ; Windows seulement |
 
 Limites connues : la bulle n'insère pas encore le texte dans l'application active (phase 5) ; la capture micro reste dans une fenêtre (la bulle, ou la fenêtre principale qui a démarré la session) ; fermer la fenêtre principale ferme l'application.
 
@@ -64,7 +64,10 @@ Limites connues : le son capturé est celui de tout le système, notifications c
 
 | Élément | État |
 | --- | --- |
-| Politique de conservation et de suppression, définie **avant** la base | fait ([security.md](security.md)) : désactivé par défaut, durée au choix, suppression réelle |
+| Politique de conservation et de suppression, définie **avant** la base | fait ([security.md](security.md)) : activé par défaut depuis le 2026-11-22 (désactivable), durée au choix, suppression réelle |
+| Mode une seule langue (fr, en, wo) ou plusieurs langues, pour le direct et les fichiers | fait (service, IPC, fenêtre principale, bulle ; tests unitaires, API, fumée Electron). Wolof seul mesuré sur 12 clips lus seulement |
+| Enregistrer la transcription en .txt (fichier et direct) | fait (boîte de dialogue système, validation dans le processus principal) |
+| Choix de la source dans la bulle | corrigé : boutons au lieu de listes déroulantes, préférences partagées entre les fenêtres. Non éprouvé à la souris sur l'application réelle |
 | Stockage SQLite (WAL, `secure_delete`, migrations par `user_version`, refuse un schéma plus récent) | fait ; suppression vérifiée en relisant les octets bruts du fichier et de son journal |
 | Recherche plein texte (FTS5, sans accents ni casse, entrées hostiles neutralisées) | fait |
 | Enregistrement du direct énoncé par énoncé ; import de fichier enregistré si l'historique est activé | fait ; échec de stockage signalé sans perdre le texte |
@@ -79,17 +82,23 @@ Limites connues : historique **non chiffré** par l'application (protégé seule
 
 Diarisation, résumés, adaptation du wolof si l'évaluation le justifie, fournisseurs cloud optionnels.
 
-## Packaging et distribution (à faire)
+## Packaging et distribution (installateur Windows produit et éprouvé sur la machine de développement)
 
-Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un backend lançable par Electron.
+Détails et commandes : [packaging.md](packaging.md).
 
-- [x] Lancer et arrêter le service Python depuis le processus principal Electron (port libre, jeton généré, arrêt de l'arbre de processus). Vérifié contre le vrai service ; la fenêtre Electron complète n'a pas encore été exercée de bout en bout.
-- [ ] Embarquer le service (PyInstaller ou Python embarqué) ; décider de la livraison de FFmpeg (licence) et des modèles (cache dans `%LOCALAPPDATA%`, téléchargement avec consentement, mode hors-ligne).
-- [ ] `electron-builder` (installateur NSIS), icône, signature de code, mises à jour.
-- [ ] Déplacer le dossier de journaux hors de l'arborescence des sources pour la version installée.
-- [ ] Vérifier l'application packagée (chemin `dist/index.html`, CSP, permissions).
-- [ ] Verrouiller les dépendances Python (un seul outil) et fournir des scripts reproductibles dans `scripts/`.
-- [x] Intégration continue : `.github/workflows/ci.yml` (Ruff + Pytest, ESLint + typecheck + Vitest + build). Écrit mais **jamais exécuté** : il faut un dépôt GitHub pour le valider.
+- [x] Lancer et arrêter le service depuis le processus principal Electron (port libre, jeton généré, arrêt de l'arbre de processus).
+- [x] Embarquer le service (PyInstaller, dossier) et FFmpeg ; `scripts/verify_frozen_service.py` le lance sans Python ni FFmpeg dans le `PATH` et lui fait transcrire une phrase synthétique, par fichier et en direct, y compris avec le moteur `language-routing` (2026-11-06).
+- [x] Modèles hors de l'installateur : cache Hugging Face habituel, téléchargement seulement après accord (boîte de dialogue à l'application installée), refus géré (`HF_HUB_OFFLINE`, message explicite).
+- [x] `electron-builder` : installateur NSIS par utilisateur, icône, verrous de sécurité Electron (fuses).
+- [x] Journaux et données dans le profil de l'utilisateur, plus dans le dossier d'installation.
+- [x] Application réellement installée (silencieusement, puis mise à niveau par-dessus) : test de fumée complet passé, y compris CSP et permissions. Lancement réel : boîte de consentement, refus, double lancement sans seconde instance, fermeture sans processus orphelin, fenêtres regardées.
+- [x] Dépendances Python verrouillées (`requirements-lock.txt`), installation vérifiée dans un environnement neuf.
+- [x] CI corrigée : le YAML était invalide depuis sa création, donc **aucun job n'avait jamais tourné** (une seule exécution GitHub, en échec, sans job). La correction n'est vérifiée que localement (fichier relu par un analyseur YAML) tant qu'elle n'est pas poussée.
+- [ ] Windows neuf (sans Python, FFmpeg ni modèles en cache) : téléchargement réel du modèle après accord ; l'absence de VC++ Redistributable.
+- [ ] Signature de code (certificat payant) : sans elle, SmartScreen avertit à l'installation.
+- [ ] Mises à jour automatiques : non prévues pour l'instant (il faudrait un hébergement et une signature).
+- [ ] Choix du wolof dans l'interface et livraison d'un modèle wolof (licences et accès à vérifier, voir [model-selection.md](model-selection.md)).
+- [ ] Licence du projet et avis de tiers avant toute diffusion publique ; FFmpeg GPLv3, voir [packaging.md](packaging.md).
 
 ## Dette connue
 
@@ -97,7 +106,7 @@ Non commencé, volontairement : il dépend du choix du moteur (phase 1) et d'un 
 - Une inférence déjà démarrée ne peut pas être annulée.
 - Capture micro du direct via `ScriptProcessorNode` (déprécié mais fonctionnel) ; migration vers un `AudioWorklet` à faire quand l'application packagée pourra être exercée (chargement du module sous `file://` et CSP).
 - Découpage des énoncés par seuil d'énergie fixe ; le VAD Silero (déjà utilisé par Whisper pour filtrer) pourrait servir au découpage.
-- Pas de test Playwright / Electron de bout en bout.
+- Pas de test Playwright / Electron de bout en bout sur l'interface (le test de fumée pilote les fenêtres par l'API du preload, avec les vrais processus).
 - Pas de test d'intégration avec le vrai modèle (téléchargement volumineux).
-- Pas de confirmation avant le téléchargement du modèle ; pas d'annulation d'une transcription en cours.
+- Pas de confirmation avant le téléchargement du modèle en mode développement (l'application installée la demande) ; pas d'annulation d'une transcription en cours.
 - Aucune mesure sur de la **parole spontanée ou bruitée** : seules de la parole lue (ALFFA, FLEURS) et un corpus synthétique FR/EN ont été mesurés. Le wolof est reconnu par des modèles dédiés avec des erreurs importantes hors de leur domaine, et le changement de langue **dans une phrase** reste non démontré.

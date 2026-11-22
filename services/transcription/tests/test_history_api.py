@@ -97,8 +97,8 @@ def test_every_history_route_requires_the_token(client, method, path):
     assert response.status_code == 401
 
 
-def test_the_history_is_off_by_default_and_nothing_is_stored(client, data_dir):
-    assert client.get("/api/v1/history/settings").json() == {"enabled": False, "retention_days": 30}
+def test_the_history_is_on_by_default_and_reading_it_creates_nothing(client, data_dir):
+    assert client.get("/api/v1/history/settings").json() == {"enabled": True, "retention_days": 30}
     assert client.get("/api/v1/history/sessions").json() == {"items": [], "total": 0}
     assert not data_dir.exists()  # not even an empty database
 
@@ -249,11 +249,17 @@ def test_export_refuses_what_it_cannot_express_without_inventing_it(client):
 # -- what gets recorded ---------------------------------------------------------------------------------------
 
 @needs_ffmpeg
-def test_a_file_transcription_is_saved_only_when_the_history_is_on(client, data_dir, tmp_path):
+def disable(client):
+    response = client.put("/api/v1/history/settings", json={"enabled": False, "retention_days": 30})
+    assert response.status_code == 200
+
+
+def test_a_file_transcription_is_saved_only_when_the_history_is_on(client, tmp_path):
     audio = wav_bytes(tmp_path)
+    disable(client)
     off = client.post("/api/v1/transcriptions", files={"file": ("secret-name.wav", audio, "audio/wav")})
     assert off.status_code == 200 and off.json()["saved_session_id"] is None
-    assert not data_dir.exists()  # nothing written while the history is off
+    assert client.get("/api/v1/history/sessions").json()["total"] == 0  # nothing written while the history is off
 
     enable(client)
     on = client.post("/api/v1/transcriptions", files={"file": ("secret-name.wav", audio, "audio/wav")})
@@ -310,9 +316,15 @@ def test_a_live_session_is_recorded_as_it_goes_when_the_history_is_on(client):
     assert stored["segments"][0]["text"].startswith("phrase de") and stored["segments"][0]["start_seconds"] is not None
 
 
-def test_a_live_session_is_not_recorded_when_the_history_is_off(client, data_dir):
+def test_a_live_session_is_not_recorded_when_the_history_is_off(client):
+    disable(client)
     run_live(client)
-    assert not data_dir.exists()
+    assert client.get("/api/v1/history/sessions").json()["total"] == 0
+
+
+def test_a_live_session_is_recorded_by_default(client):
+    run_live(client)
+    assert client.get("/api/v1/history/sessions").json()["total"] == 1
 
 
 def test_a_live_session_that_ends_in_error_is_kept_but_marked_interrupted(client):

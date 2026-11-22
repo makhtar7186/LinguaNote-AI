@@ -42,3 +42,14 @@ def test_respects_level(tmp_path):
 def test_invalid_level_raises(tmp_path):
     with pytest.raises(ValueError):
         configure_logging(tmp_path, "LOUD")
+
+
+def test_logs_follow_the_data_folder_so_an_installed_app_never_writes_to_its_install_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("LINGUANOTE_DATA_DIR", str(tmp_path / "profile"))
+    assert configure_logging(level="INFO") == tmp_path / "profile" / "logs" / "linguanote.log"
+
+
+def test_an_explicit_log_folder_wins_over_the_data_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("LINGUANOTE_DATA_DIR", str(tmp_path / "profile"))
+    monkeypatch.setenv("LINGUANOTE_LOG_DIR", str(tmp_path / "elsewhere"))
+    assert configure_logging(level="INFO") == tmp_path / "elsewhere" / "linguanote.log"

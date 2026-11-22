@@ -38,6 +38,8 @@ class HealthResponse(BaseModel):
     model: str | None = None
     setup_message: str | None = None
     ffmpeg_available: bool
+    # Languages the single-language mode accepts with this engine ([]: only the multi-language mode).
+    languages: list[str] = []
     limits: Limits
 
 

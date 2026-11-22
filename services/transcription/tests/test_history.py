@@ -43,10 +43,10 @@ def add_session(repository, texts, *, kind="live", title=None):
     return session_id
 
 
-# -- nothing happens until the user turns the history on -------------------------------------------------------
+# -- reading creates nothing; the history is on until the user turns it off ------------------------------------
 
 def test_reading_never_creates_a_database_file(repository, database):
-    assert repository.get_settings().enabled is False
+    assert repository.get_settings().enabled is True
     assert repository.list_sessions() == {"items": [], "total": 0}
     assert repository.get_session("x") is None
     assert repository.delete_all() == 0
@@ -56,9 +56,17 @@ def test_reading_never_creates_a_database_file(repository, database):
     assert not database.path.parent.exists()
 
 
-def test_defaults_are_off_and_thirty_days(repository):
+def test_defaults_are_on_and_thirty_days(repository):
     settings = repository.get_settings()
-    assert (settings.enabled, settings.retention_days) == (False, 30)
+    assert (settings.enabled, settings.retention_days) == (True, 30)
+
+
+def test_an_explicit_off_wins_over_the_default_and_stops_every_write(repository):
+    session_id = repository.create_session(kind="live", source="microphone")
+    assert repository.append_segment(session_id, text="avant", only_if_enabled=True) is True  # default: on
+    repository.set_settings(enabled=False, retention_days=30)
+    assert repository.get_settings().enabled is False
+    assert repository.append_segment(session_id, text="après", only_if_enabled=True) is False
 
 
 def test_settings_persist_and_are_validated(repository):
@@ -304,9 +312,16 @@ def test_keeping_forever_purges_nothing(repository, clock):
 
 # -- the recorder used by live sessions and file imports -------------------------------------------------------
 
-def test_the_recorder_stores_nothing_when_the_history_is_off(repository, database):
+def test_the_recorder_stores_nothing_when_the_history_is_off(repository):
+    repository.set_settings(enabled=False, retention_days=30)
     assert SessionRecorder.begin(repository, kind="live") is None
-    assert not database.exists()
+    assert repository.list_sessions() == {"items": [], "total": 0}
+
+
+def test_the_recorder_stores_by_default(repository):
+    recorder = SessionRecorder.begin(repository, kind="live", source="microphone")
+    assert recorder is not None and recorder.segment(text="bonjour")
+    assert repository.list_sessions()["total"] == 1
 
 
 def test_the_recorder_writes_ordered_segments_and_closes_the_session(repository):

@@ -69,6 +69,14 @@ describe("opening", () => {
     expect(socket().url).not.toContain("tok");
   });
 
+  it("imposes the chosen language in the start message; several languages send none", () => {
+    const client = new live.LiveClient(config, { WebSocketImpl: FakeWebSocket, onEvent: () => {}, source: "microphone", language: "en" });
+    client.start();
+    const first = FakeWebSocket.instances.at(-1)!;
+    first.open();
+    expect(first.json()[0]).toEqual({ type: "start", token: "tok", protocol: 1, source: "microphone", language: "en" });
+  });
+
   it("declares the capture source in the start message, and only in it (a resume carries none)", () => {
     const client = new live.LiveClient(config, { WebSocketImpl: FakeWebSocket, onEvent: () => {}, source: "system" });
     client.start();

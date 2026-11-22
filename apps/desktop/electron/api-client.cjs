@@ -5,6 +5,8 @@ const DEFAULT_API_BASE = "http://127.0.0.1:8765";
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const HEALTH_TIMEOUT_MS = 5_000;
 const TRANSCRIBE_TIMEOUT_MS = 15 * 60_000;
+// One imposed language (see the service's single-language mode); absent: several languages, detected.
+const SPOKEN_LANGUAGES = ["fr", "en", "wo"];
 const ALLOWED_EXTENSIONS = new Set([
   ".aac", ".flac", ".m4a", ".mkv", ".mov", ".mp3", ".mp4",
   ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma",
@@ -40,6 +42,9 @@ function validateTranscribePayload(payload, limits = DEFAULT_LIMITS) {
   }
   if (!(payload.bytes instanceof Uint8Array) || payload.bytes.byteLength === 0) {
     throw new IpcError("empty_file", "Le fichier audio est vide ou illisible.");
+  }
+  if (payload.language !== undefined && !SPOKEN_LANGUAGES.includes(payload.language)) {
+    throw new IpcError("unsupported_language", "Langue inconnue.");
   }
   if (payload.bytes.byteLength > limits.maxUploadBytes) {
     throw new IpcError("file_too_large", `La limite de taille est de ${Math.round(limits.maxUploadBytes / (1024 * 1024))} Mio.`);
@@ -93,6 +98,7 @@ async function transcribe(config, payload, fetchImpl) {
     validateTranscribePayload(payload, await fetchLimits(config, fetchImpl));
     const body = new FormData();
     body.append("file", new Blob([payload.bytes], { type: payload.type }), payload.name);
+    if (payload.language) body.append("language", payload.language);
     const response = await request(
       config, "/api/v1/transcriptions", { method: "POST", body }, TRANSCRIBE_TIMEOUT_MS, fetchImpl,
     );
@@ -112,5 +118,5 @@ async function transcribe(config, payload, fetchImpl) {
 }
 
 module.exports = {
-  IpcError, getConfig, validateTranscribePayload, fetchLimits, health, transcribe, MAX_UPLOAD_BYTES,
+  IpcError, getConfig, validateTranscribePayload, fetchLimits, health, transcribe, MAX_UPLOAD_BYTES, SPOKEN_LANGUAGES,
 };

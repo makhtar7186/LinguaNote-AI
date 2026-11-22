@@ -32,10 +32,17 @@ export interface ServiceHealth {
   model?: string | null;
   setup_message?: string | null;
   ffmpeg_available?: boolean;
+  /** Languages the single-language mode accepts with the configured engine (empty: several languages only). */
+  languages?: SpokenLanguage[];
   limits?: Limits;
   message?: string;
   code?: string;
 }
+
+/** One language the user can impose on a whole session or file. */
+export type SpokenLanguage = "fr" | "en" | "wo";
+/** "auto": several languages, detected passage by passage (the default). Otherwise one language for everything. */
+export type LanguageMode = "auto" | SpokenLanguage;
 
 /** What a live session listens to. Chosen by the user, shown everywhere, never switched silently. */
 export type AudioSourceKind = "microphone" | "system" | "both";
@@ -99,7 +106,7 @@ export interface LiveBridge {
   /** First step: declare the source, so the recording indicator is shown before any device opens. */
   prepare: (options?: { source?: AudioSourceKind }) => Promise<unknown>;
   /** Opens a session; resolves to the same `{ok}` envelope as the other bridge calls. */
-  start: (options?: { source?: AudioSourceKind }) => Promise<unknown>;
+  start: (options?: { source?: AudioSourceKind; language?: SpokenLanguage }) => Promise<unknown>;
   /** Fire and forget: 16 kHz mono PCM s16le. */
   sendAudio: (pcm: Uint8Array) => void;
   stop: () => Promise<unknown>;
@@ -200,10 +207,16 @@ export interface InsertionBridge {
   onStatus: (listener: (status: unknown) => void) => () => void;
 }
 
+export interface TranscriptBridge {
+  /** Asks where to save (native dialog) and writes the text as a .txt file. Resolves to `{ok, saved}` or an error. */
+  saveText: (text: string) => Promise<unknown>;
+}
+
 export interface LinguaNoteBridge {
   health: () => Promise<unknown>;
-  transcribe: (payload: { name: string; type: string; bytes: Uint8Array }) => Promise<unknown>;
+  transcribe: (payload: { name: string; type: string; bytes: Uint8Array; language?: SpokenLanguage }) => Promise<unknown>;
   live?: LiveBridge;
+  transcript?: TranscriptBridge;
   history?: HistoryBridge;
   insertion?: InsertionBridge;
   bubble?: BubbleBridge;

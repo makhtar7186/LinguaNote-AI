@@ -11,6 +11,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.config import Settings
 from app.engines.base import ModelUnavailableError
+from app.engines.language_mode import UnsupportedLanguageError, for_language
 from app.engines.registry import LIVE_ROUTING, get_engine
 from app.live.manager import BusyError, LiveManager
 from app.live.protocol import (
@@ -125,14 +126,21 @@ def build_live_router(settings: Settings, manager: LiveManager) -> APIRouter:
             return session, True, opening.last_event_id
 
         routed = settings.engine == "language-routing"
+        language = getattr(opening, "language", None)
         try:
             engine = await run_in_threadpool(get_engine, LIVE_ROUTING if routed else settings.engine)
+            engine = for_language(engine, language)
         except ModelUnavailableError as exc:
             await _reject(connection, "model_unavailable", str(exc))
             return None
+        except UnsupportedLanguageError as exc:
+            await _reject(connection, "unsupported_language", str(exc))
+            return None
         try:
-            # Routing reads the language of whole passages: long chunks (10 to 20 s), final text only.
-            options = {"segmenter_config": ROUTING_SEGMENTER, "partials": False} if routed else {}
+            # Routing reads the language of whole passages: long chunks (10 to 20 s), final text only. The Wolof
+            # model alone keeps that pace too: it is barely faster than speech here (docs/packaging.md).
+            slow = routed and language in (None, "wo")
+            options = {"segmenter_config": ROUTING_SEGMENTER, "partials": False} if slow else {}
             return manager.create(engine, source=getattr(opening, "source", None), **options), False, 0
         except BusyError:
             await _reject(connection, "busy", "A live session is already running.")

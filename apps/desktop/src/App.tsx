@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HistoryPanel } from "./components/HistoryPanel";
 import { InsertionControl } from "./components/InsertionControl";
+import { LanguagePicker } from "./components/LanguagePicker";
 import { LanguagePassages } from "./components/LanguagePassages";
 import { LevelMeter, SilenceWarning, SourcePicker } from "./components/SourcePicker";
 import { useCapturePreferences, useMicrophones } from "./hooks/useCapturePreferences";
 import { useLiveTranscription } from "./hooks/useLiveTranscription";
 import { MAX_RECORDING_SECONDS, useRecorder } from "./hooks/useRecorder";
 import { sourceLabel } from "./services/audioSource";
+import { languageAvailable, requestedLanguage } from "./services/languageMode";
+import { saveTranscriptText } from "./services/transcriptFile";
 import { transcriptText } from "./services/liveReducer";
 import { getServiceHealth, transcribeFile } from "./services/transcriptionClient";
 import type { ServiceHealth, TranscriptionResponse } from "./types";
@@ -47,11 +50,14 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const preferences = useCapturePreferences();
-  const live = useLiveTranscription({ defaultStart: { source: preferences.source, deviceId: preferences.deviceId } });
+  const language = requestedLanguage(preferences.language);
+  const live = useLiveTranscription({ defaultStart: { source: preferences.source, deviceId: preferences.deviceId, language } });
   const microphones = useMicrophones(live.state.status);
   const liveActive = ["connecting", "live", "reconnecting", "stopping"].includes(live.state.status);
   const liveText = transcriptText(live.state);
   const [bubbleNotice, setBubbleNotice] = useState("");
+  const [saveNotice, setSaveNotice] = useState<{ target: "file" | "live"; text: string; failed: boolean } | null>(null);
+  const languageUsable = languageAvailable(preferences.language, health?.ok ? health.languages : undefined);
   const maxBytes = health?.limits?.max_upload_bytes ?? DEFAULT_MAX_BYTES;
   // The service is the source of truth for supported formats; the fallback only covers "service not reached yet".
   const acceptedExtensions = health?.limits?.extensions.length
@@ -64,12 +70,13 @@ export default function App() {
     });
   }, []);
 
-  // Re-check periodically so the status recovers when the Python service starts after the UI.
+  // A service still starting is not a failure: it is watched closely, then checked now and then in case it goes away.
+  const serviceStarting = health === null || health.code === "starting";
   useEffect(() => {
     refreshHealth();
-    const timer = window.setInterval(refreshHealth, 10_000);
+    const timer = window.setInterval(refreshHealth, serviceStarting ? 1_000 : 10_000);
     return () => window.clearInterval(timer);
-  }, [refreshHealth]);
+  }, [refreshHealth, serviceStarting]);
 
   async function submitAudio(audioFile: File) {
     if (audioFile.size > maxBytes) {
@@ -80,7 +87,7 @@ export default function App() {
     setError("");
     setResult(null);
     try {
-      const transcription = await transcribeFile(audioFile);
+      const transcription = await transcribeFile(audioFile, language);
       setResult(transcription);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "La transcription a échoué.");
@@ -114,6 +121,16 @@ export default function App() {
     void startRecording();
   }
 
+  async function saveAsText(target: "file" | "live", text: string) {
+    setSaveNotice(null);
+    try {
+      const outcome = await saveTranscriptText(text);
+      if (outcome === "saved") setSaveNotice({ target, text: "Fichier texte enregistré.", failed: false });
+    } catch (cause) {
+      setSaveNotice({ target, text: cause instanceof Error ? cause.message : "L’enregistrement a échoué.", failed: true });
+    }
+  }
+
   async function copyTranscript() {
     if (!result) return;
     try {
@@ -125,7 +142,7 @@ export default function App() {
 
   const serviceLabel = health?.ok
     ? health.engine_selected ? `Moteur configuré · ${health.engine}` : "API prête · moteur absent"
-    : health ? "Service local indisponible" : "Vérification du service…";
+    : serviceStarting ? "Démarrage du service…" : "Service local indisponible";
 
   return (
     <main className="app-shell">
@@ -150,10 +167,12 @@ export default function App() {
         <p className="eyebrow">ESPACE DE TRANSCRIPTION</p>
         <h1>Votre voix,<br /><span>en texte.</span></h1>
         <p className="intro-copy">Importez un fichier ou enregistrez quelques secondes au microphone.</p>
-        <div className="language-row" aria-label="Langues à l’étude">
-          <span>FR</span><span>EN</span><span>WO</span>
-          <small>Français · English · Wolof en évaluation</small>
-        </div>
+        <LanguagePicker
+          value={preferences.language}
+          available={health?.ok ? health.languages : undefined}
+          disabled={busy || recording || liveActive}
+          onChange={preferences.setLanguage}
+        />
       </section>
 
       <section className="workspace" aria-label="Nouvelle transcription">
@@ -166,7 +185,7 @@ export default function App() {
         </div>
 
         {health && !health.ok && health.message && (
-          <div className="notice error-notice" role="status">{health.message}</div>
+          <div className={`notice ${serviceStarting ? "setup-notice" : "error-notice"}`} role="status">{health.message}</div>
         )}
         {health?.ok && health.ffmpeg_available === false && (
           <div className="notice error-notice" role="status">
@@ -177,7 +196,13 @@ export default function App() {
           <div className="notice setup-notice" role="status">
             {!health.engine_selected
               ? `${health.setup_message ?? "Aucun moteur ASR compatible n’est installé."} Le micro et l’import fonctionnent, mais la transcription reste indisponible.`
-              : `Le modèle ${health.model ?? "Whisper base"} sera téléchargé lors de la première transcription. Le français et l’anglais sont pris en charge ; le wolof et les phrases mixtes restent à évaluer.`}
+              : `Modèle : ${health.model ?? "Whisper base"} (récupéré à la première transcription s’il n’est pas encore présent et si vous l’avez autorisé). Le français et l’anglais sont pris en charge ; le wolof et les phrases mixtes restent à évaluer.`}
+          </div>
+        )}
+
+        {!languageUsable && (
+          <div className="notice error-notice" role="status">
+            La langue choisie n’est pas disponible avec le moteur configuré : choisissez « Plusieurs langues » ou une autre langue.
           </div>
         )}
 
@@ -242,7 +267,18 @@ export default function App() {
 
         {result && (
           <section className="result-card" aria-live="polite">
-            <div className="result-heading"><div><p className="eyebrow">RÉSULTAT</p><h2>Transcription</h2></div><button className="text-button" onClick={() => void copyTranscript()}>Copier le texte</button></div>
+            <div className="result-heading">
+              <div><p className="eyebrow">RÉSULTAT</p><h2>Transcription</h2></div>
+              <div className="result-actions">
+                <button className="text-button" onClick={() => void copyTranscript()}>Copier le texte</button>
+                <button className="text-button" onClick={() => void saveAsText("file", result.text)} disabled={!result.text.trim()}>
+                  Enregistrer en .txt
+                </button>
+              </div>
+            </div>
+            {saveNotice?.target === "file" && (
+              <div className={`notice ${saveNotice.failed ? "error-notice" : "setup-notice"}`} role="status">{saveNotice.text}</div>
+            )}
             {result.warnings.length > 0 && (
               <div className="notice error-notice" role="alert">
                 Transcription incomplète : {result.warnings.length} passage(s) n’ont pas pu être transcrits.
@@ -308,8 +344,8 @@ export default function App() {
           ) : (
             <button
               className="record-button"
-              onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId })}
-              disabled={!live.supported || busy || recording}
+              onClick={() => void live.start({ source: preferences.source, deviceId: preferences.deviceId, language })}
+              disabled={!live.supported || busy || recording || !languageUsable}
             >
               Démarrer le direct
             </button>
@@ -353,9 +389,15 @@ export default function App() {
         ))}
 
         {liveText.final && !liveActive && (
-          <button className="text-button" onClick={() => void navigator.clipboard.writeText(liveText.final).catch(() => setError("Copie impossible. Sélectionne le texte pour le copier manuellement."))}>
-            Copier le texte du direct
-          </button>
+          <div className="result-actions">
+            <button className="text-button" onClick={() => void navigator.clipboard.writeText(liveText.final).catch(() => setError("Copie impossible. Sélectionne le texte pour le copier manuellement."))}>
+              Copier le texte du direct
+            </button>
+            <button className="text-button" onClick={() => void saveAsText("live", liveText.final)}>Enregistrer en .txt</button>
+          </div>
+        )}
+        {saveNotice?.target === "live" && (
+          <div className={`notice ${saveNotice.failed ? "error-notice" : "setup-notice"}`} role="status">{saveNotice.text}</div>
         )}
       </section>
 

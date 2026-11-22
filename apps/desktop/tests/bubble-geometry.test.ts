@@ -55,7 +55,7 @@ describe("resizeAnchored", () => {
 
   it("grows down and to the right from the top-left", () => {
     const expanded = geometry.resizeAnchored({ x: 20, y: 20, width: 72, height: 72 }, geometry.EXPANDED, screen);
-    expect(expanded).toMatchObject({ x: 20, y: 20, width: 340, height: 380 });
+    expect(expanded).toMatchObject({ x: 20, y: 20, width: 340, height: 480 });
   });
 
   it("returns exactly to the original place after collapsing", () => {

@@ -22,9 +22,12 @@ def configure_logging(log_dir: Path | None = None, level: str | None = None) -> 
     """Configure the `linguanote` logger and return the log file path.
 
     Safe to call more than once: previously installed handlers are replaced.
-    Environment overrides: LINGUANOTE_LOG_DIR, LINGUANOTE_LOG_LEVEL.
+    Environment overrides: LINGUANOTE_LOG_DIR, LINGUANOTE_LOG_LEVEL. Logs follow LINGUANOTE_DATA_DIR when it is set:
+    the source tree does not exist (or is read-only) in an installed application.
     """
-    directory = log_dir or Path(os.getenv("LINGUANOTE_LOG_DIR", DEFAULT_LOG_DIR))
+    data_dir = os.getenv("LINGUANOTE_DATA_DIR")
+    default_dir = Path(data_dir) / "logs" if data_dir else DEFAULT_LOG_DIR
+    directory = log_dir or Path(os.getenv("LINGUANOTE_LOG_DIR") or default_dir)
     level_name = (level or os.getenv("LINGUANOTE_LOG_LEVEL", "INFO")).upper()
     log_level = logging.getLevelName(level_name)
     if not isinstance(log_level, int):

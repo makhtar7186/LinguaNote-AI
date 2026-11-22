@@ -1,0 +1,34 @@
+# Windows installer. Build with scripts/build-installer.ps1, which prepares the two extraResources folders.
+appId: com.linguanote.desktop
+productName: LinguaNote AI
+copyright: LinguaNote AI
+directories:
+  output: ../../release
+files:
+  - electron/**
+  - dist/**
+  - package.json
+asar: true
+extraResources:
+  # Outside the asar: an executable cannot be started from inside the archive.
+  - from: ../../services/transcription/dist/linguanote-service
+    to: service
+  - from: ../../services/transcription/dist/ffmpeg
+    to: ffmpeg
+win:
+  target: nsis
+  icon: ../../assets/icon.ico
+nsis:
+  # Per-user install: no administrator rights, and the history stays with the Windows account it belongs to.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: LinguaNote-AI-Setup-${version}.${ext}
+  # Uninstalling does not silently destroy the user's saved transcriptions (docs/security.md).
+  deleteAppDataOnUninstall: false
+electronFuses:
+  # An installed application cannot be turned into a plain Node runtime through its environment or command line.
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true

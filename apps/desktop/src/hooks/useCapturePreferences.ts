@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
-import { type CapturePreferences, loadPreferences, savePreferences } from "../services/capturePreferences";
-import type { AudioSourceKind } from "../types";
+import { type CapturePreferences, KEY, loadPreferences, savePreferences } from "../services/capturePreferences";
+import type { AudioSourceKind, LanguageMode } from "../types";
 
-/** The source and microphone the user picked, remembered between launches. */
+/**
+ * The source, microphone and language the user picked, remembered between launches. The main window and the bubble
+ * share them: a choice made in one window is shown in the other at once (the "storage" event reaches every other
+ * window of the application), so the bubble never starts a session with a choice the user already changed elsewhere.
+ */
 export function useCapturePreferences() {
   const [preferences, setPreferences] = useState<CapturePreferences>(() => loadPreferences());
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === KEY || event.key === null) setPreferences(loadPreferences());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const update = useCallback((patch: Partial<CapturePreferences>) => {
     setPreferences((current) => {
@@ -17,8 +29,10 @@ export function useCapturePreferences() {
   return {
     source: preferences.source,
     deviceId: preferences.deviceId,
+    language: preferences.language,
     setSource: useCallback((source: AudioSourceKind) => update({ source }), [update]),
     setDeviceId: useCallback((deviceId: string) => update({ deviceId }), [update]),
+    setLanguage: useCallback((language: LanguageMode) => update({ language }), [update]),
   };
 }
 

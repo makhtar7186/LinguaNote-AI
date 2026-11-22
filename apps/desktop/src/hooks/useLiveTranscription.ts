@@ -2,7 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { parseLiveEvent } from "../services/liveEvents";
 import { initialLiveState, liveReducer } from "../services/liveReducer";
 import { type EndedSource, type MicCapture, startMicCapture } from "../services/micCapture";
-import type { AudioSourceKind, LiveBridge, LiveClientState } from "../types";
+import type { AudioSourceKind, LiveBridge, LiveClientState, SpokenLanguage } from "../types";
 
 const IDLE_STATUSES = ["idle", "ended", "failed"];
 /** Below this loudness (RMS, 0 to 1) a source counts as silent. */
@@ -36,6 +36,8 @@ export interface StartOptions {
   source?: AudioSourceKind;
   /** A specific microphone (empty = the system default). */
   deviceId?: string;
+  /** One imposed language; undefined: several languages, detected passage by passage. */
+  language?: SpokenLanguage;
 }
 
 interface Options {
@@ -227,7 +229,8 @@ export function useLiveTranscription({ handleCommands = false, defaultStart }: O
         cancelDeclaration();
         return;
       }
-      const failure = failureOf(await bridge.start({ source: startOptionsRef.current.source }));
+      const { source, language } = startOptionsRef.current;
+      const failure = failureOf(await bridge.start({ source, ...(language ? { language } : {}) }));
       if (failure) {
         releaseMicrophone();
         ownerRef.current = false;

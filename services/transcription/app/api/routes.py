@@ -9,12 +9,13 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from importlib.util import find_spec
 from pathlib import Path
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Form, UploadFile
 
 from app import inference as inference_worker
 from app.audio.convert import convert_to_model_wav, validate_wav
 from app.config import SUPPORTED_EXTENSIONS, Settings
 from app.engines.base import ModelUnavailableError, TranscriptionResult
+from app.engines.language_mode import SESSION_LANGUAGES, UnsupportedLanguageError, for_language, supported_languages
 from app.engines.registry import capabilities_for, get_engine
 from app.errors import ApiError
 from app.schemas.transcription import HealthResponse, Limits, SegmentOut, TranscriptionResponse
@@ -124,6 +125,7 @@ def build_router(settings: Settings, history: HistoryRepository | None = None) -
             model=model,
             setup_message=message,
             ffmpeg_available=ffmpeg_ok,
+            languages=supported_languages(settings.engine) if available else [],
             limits=Limits(
                 max_upload_bytes=settings.max_upload_bytes,
                 max_audio_seconds=effective_max_audio_seconds(settings),
@@ -132,7 +134,11 @@ def build_router(settings: Settings, history: HistoryRepository | None = None) -
         )
 
     @router.post(UPLOAD_PATH, response_model=TranscriptionResponse)
-    def transcribe(file: UploadFile = File(...)) -> TranscriptionResponse:
+    def transcribe(file: UploadFile = File(...), language: str | None = Form(None)) -> TranscriptionResponse:
+        # No language (or "auto"): several languages, detected. Otherwise the user's single language.
+        language = None if language in (None, "", "auto") else language
+        if language is not None and language not in SESSION_LANGUAGES:
+            raise ApiError(422, "unsupported_language", f"Choose one of: auto, {', '.join(SESSION_LANGUAGES)}.")
         extension = Path(file.filename or "").suffix.lower()
         if extension not in SUPPORTED_EXTENSIONS:
             raise ApiError(415, "unsupported_extension", "Unsupported audio/video file extension.")
@@ -147,9 +153,11 @@ def build_router(settings: Settings, history: HistoryRepository | None = None) -
             size = _read_upload(file, source, settings.max_upload_bytes)
 
             try:
-                engine = get_engine(settings.engine)
+                engine = for_language(get_engine(settings.engine), language)
             except ModelUnavailableError as exc:
                 raise ApiError(503, "model_unavailable", str(exc)) from exc
+            except UnsupportedLanguageError as exc:
+                raise ApiError(422, "unsupported_language", str(exc)) from exc
             limit = effective_max_audio_seconds(settings)
             if engine.capabilities.max_audio_seconds:
                 limit = min(limit, engine.capabilities.max_audio_seconds)
@@ -163,8 +171,9 @@ def build_router(settings: Settings, history: HistoryRepository | None = None) -
             inference = inference_worker.submit(engine.transcribe, model_wav)
             result = _await_inference(inference, settings.inference_timeout_seconds)
             logger.info(
-                "Transcribed upload ext=%s bytes=%d audio=%.1fs engine=%s model=%s elapsed=%.2fs",
-                extension, size, duration, result.engine, result.model, time.perf_counter() - started,
+                "Transcribed upload ext=%s bytes=%d audio=%.1fs engine=%s model=%s language=%s elapsed=%.2fs",
+                extension, size, duration, result.engine, result.model, language or "auto",
+                time.perf_counter() - started,
             )
             saved_session_id = save_file_transcription(history, result, duration)
             return TranscriptionResponse(

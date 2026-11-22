@@ -158,7 +158,7 @@ export function HistoryPanel() {
           </select>
         </label>
         <p className="history-note">
-          Désactivé par défaut. Quand il est activé, le texte des dictées et des fichiers est enregistré localement,
+          Activé par défaut : décochez la case pour ne plus rien enregistrer. Le texte des dictées et des fichiers est enregistré localement,
           sans chiffrement propre à l’application (il dépend de la protection de votre compte Windows). L’audio n’est jamais conservé.
         </p>
       </div>

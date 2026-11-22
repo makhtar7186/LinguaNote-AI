@@ -19,7 +19,8 @@ contextBridge.exposeInMainWorld("linguaNote", {
     // Declare the source before opening any device: the bubble is shown first, and system audio needs this step.
     prepare: (options) => ipcRenderer.invoke("linguanote:live:prepare", { source: options?.source }),
     // options.source: "microphone" | "system" | "both" (validated by the main process; unknown values are refused)
-    start: (options) => ipcRenderer.invoke("linguanote:live:start", { source: options?.source }),
+    // options.language: "fr" | "en" | "wo" to impose one language; absent: several languages (validated likewise)
+    start: (options) => ipcRenderer.invoke("linguanote:live:start", { source: options?.source, language: options?.language }),
     sendAudio: (pcm) => {
       // ArrayBuffer.isView: `instanceof` is unreliable across the context-isolation boundary.
       if (ArrayBuffer.isView(pcm)) ipcRenderer.send("linguanote:live:audio", pcm);
@@ -31,6 +32,11 @@ contextBridge.exposeInMainWorld("linguaNote", {
     onEvent: (listener) => subscribe("linguanote:live:event", listener),
   },
 
+  // Save a transcript as a .txt file: the main process asks where (native dialog); the renderer never gives a path.
+  transcript: {
+    saveText: (text) => ipcRenderer.invoke("linguanote:transcript:saveText", { text }),
+  },
+
   // Insert finished text into the application in front (Windows). Opt-in per session; the main process does the work.
   insertion: {
     arm: () => ipcRenderer.invoke("linguanote:insertion:arm"),
@@ -39,7 +45,7 @@ contextBridge.exposeInMainWorld("linguaNote", {
     onStatus: (listener) => subscribe("linguanote:insertion:status", listener),
   },
 
-  // The saved transcriptions (opt-in). Fixed operation names; the main process validates every argument.
+  // The saved transcriptions (on by default, the user can turn it off). Fixed operation names; the main process validates every argument.
   history: {
     getSettings: () => ipcRenderer.invoke("linguanote:history:run", "getSettings"),
     setSettings: (enabled, retentionDays) =>
